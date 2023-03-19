@@ -1,10 +1,7 @@
 use std::{
     sync::{
-        atomic::{
-            Ordering,
-            AtomicI64,
-        },
         Arc,
+        Mutex,
     },
     time::{
         Instant,
@@ -13,6 +10,8 @@ use std::{
 };
 
 pub mod error;
+
+const NANO_IN_MILLI: u32 = 1_000_000;
 
 /// generates Snowcloud and Snowflake for the given bit sizes
 ///
@@ -37,7 +36,7 @@ macro_rules! gen_code {
         pub const SEQUENCE_MASK: i64 = MAX_SEQUENCE;
 
         /// id generated from a Snowcloud
-        #[derive(Debug)]
+        #[derive(Eq, Hash, PartialEq, Debug)]
         #[cfg_attr(test, derive(Clone))]
         pub struct Snowflake {
             ts: i64,
@@ -81,16 +80,20 @@ macro_rules! gen_code {
             }
         }
 
+        struct Counts {
+            sequence: i64,
+            prev_time: i64,
+            prev_nanos: u32,
+        }
+
         /// generates Snowflakes from a given EPOCH and machine id
         ///
-        /// uses atomics for the sequence and previous timestamp to help with
-        /// performance and reduce the amount of waiting that needs to be done
+        /// uses an Arc Mutex to store prev_time and sequence data
         #[derive(Clone)]
         pub struct Snowcloud {
             pub epoch: i64,
             pub machine_id: i64,
-            sequence: Arc<AtomicI64>,
-            prev_time: Arc<AtomicI64>,
+            counts: Arc<Mutex<Counts>>,
         }
 
         impl Snowcloud {
@@ -101,25 +104,28 @@ macro_rules! gen_code {
             /// timestamp is invalid, it failes to retrieve the current
             /// timestamp, or if the epoch is ahead of the current timestamp
             pub fn new(machine_id: i64, epoch: i64) -> error::Result<Snowcloud> {
-                if machine_id > MAX_MACHINE_ID {
-                    return Err(error::Error::MachineIdTooLarge);
+                if machine_id < 0 || machine_id > MAX_MACHINE_ID {
+                    return Err(error::Error::MachineIdInvalid);
                 }
 
-                if epoch > MAX_TIMESTAMP {
-                    return Err(error::Error::EpochTooLarge);
+                if epoch < 0 || epoch > MAX_TIMESTAMP {
+                    return Err(error::Error::EpochInvalid);
                 }
 
-                let now = ts_millis()?;
+                let (now, nanos) = ts_millis()?;
 
                 if epoch > now {
-                    return Err(error::Error::EpochInFuture);
+                    return Err(error::Error::EpochInvalid);
                 }
 
                 Ok(Snowcloud {
                     epoch,
                     machine_id,
-                    sequence: Arc::new(AtomicI64::new(1)),
-                    prev_time: Arc::new(AtomicI64::new(now)),
+                    counts: Arc::new(Mutex::new(Counts {
+                        sequence: 1,
+                        prev_time: now,
+                        prev_nanos: nanos,
+                    })),
                 })
             }
 
@@ -129,23 +135,53 @@ macro_rules! gen_code {
             /// reached, or if it fails to get the current timestamp this will
             /// return an error.
             pub fn next_id(&self) -> error::Result<Snowflake> {
-                let now = ts_millis()? - self.epoch;
+                let (secs, nanos) = ts_millis()?;
+                let now = secs - self.epoch;
                 let mut seq_value: i64 = 1;
 
                 if now > MAX_TIMESTAMP {
                     return Err(error::Error::TimestampMaxReached);
                 }
 
-                if now == self.prev_time.load(Ordering::Relaxed) {
-                    seq_value = self.sequence.fetch_add(1, Ordering::AcqRel);
-                } else {
-                    self.prev_time.store(now, Ordering::SeqCst);
-                    self.sequence.store(2, Ordering::SeqCst);
+                {
+                    let Ok(mut counts_lock) = self.counts.lock() else {
+                        return Err(error::Error::MutexError);
+                    };
+
+                    if now == counts_lock.prev_time {
+                        seq_value = counts_lock.sequence;
+
+                        if seq_value > MAX_SEQUENCE {
+                            counts_lock.prev_nanos = nanos;
+
+                            return Err(error::Error::SequenceMaxReached(NANO_IN_MILLI - nanos));
+                        }
+
+                        counts_lock.sequence += 1;
+                        counts_lock.prev_nanos = nanos;
+                    } else {
+                        counts_lock.sequence = 2;
+                        counts_lock.prev_time = now;
+                        counts_lock.prev_nanos = nanos;
+                    }
                 }
 
-                if seq_value > MAX_SEQUENCE {
-                    return Err(error::Error::SequenceMaxReached);
+                /* 
+                // maybe this can work but right now I dont know what to do
+                // in a multithreaded instance
+                if now == self.prev_time.load(Ordering::Relaxed) {
+                    seq_value = self.sequence.load(Ordering::Acquire);
+
+                    if seq_value > MAX_SEQUENCE {
+                        return Err(error::Error::SequenceMaxReached);
+                    }
+
+                    self.sequence.swap(seq_value + 1, Ordering::SeqCst);
+                } else {
+                    self.prev_time.swap(now, Ordering::SeqCst);
+                    self.sequence.swap(2, Ordering::SeqCst);
                 }
+                */
 
                 Ok(Snowflake {
                     ts: now,
@@ -160,16 +196,14 @@ macro_rules! gen_code {
             /// will spin_loop until the next millisecond and try again
             pub fn spin_next_id(&self) -> error::Result<Snowflake> {
                 loop {
-                    let start = Instant::now();
-
                     match self.next_id() {
                         Ok(sf) => {
                             return Ok(sf);
                         },
                         Err(err) => {
                             match err {
-                                error::Error::SequenceMaxReached => {
-                                    spin_one_milli(&start);
+                                error::Error::SequenceMaxReached(to_next_milli) => {
+                                    spin_one_milli(to_next_milli);
                                 },
                                 _ => {
                                     return Err(err);
@@ -183,31 +217,33 @@ macro_rules! gen_code {
     };
 }
 
-gen_code!(43, 8, 12);
+gen_code!(42, 8, 13);
 
 /// returns current UNIX EPOCH in milliseconds
-fn ts_millis() -> error::Result<i64> {
+fn ts_millis() -> error::Result<(i64,u32)> {
     let now = SystemTime::now();
 
     let Ok(duration) = now.duration_since(SystemTime::UNIX_EPOCH) else {
         return Err(error::Error::TimestampError);
     };
 
-    let sec: u64 = duration.as_secs() * 1000;
-    let millis: u64 = duration.subsec_millis().into();
+    let Ok(cast) = i64::try_from(duration.as_millis()) else {
+        return Err(error::Error::TimestampError);
+    };
 
-    i64::try_from(sec + millis).map_err(|_| error::Error::TimestampError)
+    Ok((cast, duration.subsec_nanos()))
 }
 
 /// busy spins for one millisecond from the given start instant
-fn spin_one_milli(start: &Instant) -> () {
-    loop {
-        let check = Instant::now();
-        let duration = check.duration_since(*start);
+fn spin_one_milli(to_next_milli: u32) -> () {
+    let start = Instant::now();
 
-        if duration.subsec_millis() > 0 {
+    loop {
+        let duration = start.elapsed().subsec_nanos();
+
+        let Some(diff) = to_next_milli.checked_sub(duration) else {
             break;
-        }
+        };
 
         std::hint::spin_loop();
     }
@@ -216,12 +252,13 @@ fn spin_one_milli(start: &Instant) -> () {
 #[cfg(test)]
 mod test {
     use std::sync::{Arc, Barrier};
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
     use std::thread;
+    use std::io::Write as _;
 
     use super::*;
 
-    const START_TIME: i64 = 946684800000;
+    const START_TIME: i64 = 1679082337000;
     const MACHINE_ID: i64 = 1;
 
     #[test]
@@ -246,7 +283,7 @@ mod test {
     }
 
     #[test]
-    fn unique_ids_across_threads() -> () {
+    fn unique_ids_multi_threads() -> () {
         let barrier = Arc::new(Barrier::new(3));
         let mut handles = Vec::with_capacity(3);
         let cloud = Snowcloud::new(MACHINE_ID, START_TIME).unwrap();
@@ -267,22 +304,103 @@ mod test {
             }));
         }
 
-        let mut unique_ids: HashSet<i64> = HashSet::new();
-        let mut thread: u8 = 0;
+        let mut failed = false;
+        let mut thread: usize = 0;
+        let mut unique_ids: HashMap<Snowflake, Vec<(usize, usize)>> = HashMap::new();
+        let mut thread_list: Vec<Vec<Snowflake>> = Vec::with_capacity(handles.len());
 
         for handle in handles {
             let list = handle.join().expect("thread paniced");
-            let mut id_count: usize = 0;
 
-            for flake in list {
-                let id: i64 = flake.clone().into();
+            thread_list.push(list);
 
-                assert!(unique_ids.insert(id), "encountered an id that was already generated. thread: {} index: {} id: {:#?}", thread, id_count, flake);
+            for index in 0..thread_list[thread].len() {
+                let flake = &thread_list[thread][index];
 
-                id_count += 1;
+                if let Some(dups) = unique_ids.get_mut(flake) {
+                    failed = true;
+                    dups.push((thread, index));
+                } else {
+                    let mut dups = Vec::with_capacity(1);
+                    dups.push((thread, index));
+
+                    unique_ids.insert(flake.clone(), dups);
+                }
             }
 
             thread += 1;
         }
+
+        if !failed {
+            return;
+        }
+
+        let mut debug_output = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open("unique_id_multi_thread.debug.txt")
+            .expect("failed to create debug_file");
+
+        for (flake, dups) in unique_ids {
+            if dups.len() > 1 {
+                debug_output.write_fmt(format_args!("flake {} {}\n", flake.ts, flake.seq)).unwrap();
+
+                for (thread, index) in dups {
+                    debug_output.write_fmt(format_args!("thread {}\n", thread)).unwrap();
+
+                    let (mut low, of) = index.overflowing_sub(3);
+                    let mut next = index + 1;
+                    let mut high = next + 3;
+
+                    if of {
+                        low = 0;
+                    }
+
+                    if next > thread_list[thread].len() {
+                        next = thread_list[thread].len();
+                        high = thread_list[thread].len();
+                    } else if high > thread_list[thread].len() {
+                        high = thread_list[thread].len();
+                    }
+
+                    let index_decimals = (high.checked_ilog10().unwrap_or(0) + 1) as usize;
+
+                    for prev_index in low..index {
+                        debug_output.write_fmt(format_args!(
+                            "{:width$} {} {}\n", 
+                            prev_index,
+                            thread_list[thread][prev_index].ts,
+                            thread_list[thread][prev_index].seq,
+                            width = index_decimals,
+                        )).unwrap();
+                    }
+
+                    debug_output.write_fmt(format_args!(
+                        "{:width$} {} {} dupliate\n",
+                        index,
+                        thread_list[thread][index].ts,
+                        thread_list[thread][index].seq,
+                        width = index_decimals,
+                    )).unwrap();
+
+                    if index != next {
+                        for next_index in next..high {
+                            debug_output.write_fmt(format_args!(
+                                "{:width$} {} {}\n",
+                                next_index,
+                                thread_list[thread][next_index].ts,
+                                thread_list[thread][next_index].seq,
+                                width = index_decimals,
+                            )).unwrap();
+                        }
+                    }
+                }
+
+                debug_output.write_fmt(format_args!("\n")).unwrap();
+            }
+        }
+
+        panic!("encountered duplidate ids. check unique_id_multi_thread.deubg.txt for output");
     }
 }

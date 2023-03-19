@@ -1,12 +1,12 @@
 /// possible errors for Snowclouds/Snowflakes
 #[derive(Debug)]
 pub enum Error {
-    MachineIdTooLarge,
-    EpochTooLarge,
-    EpochInFuture,
+    MachineIdInvalid,
+    EpochInvalid,
     TimestampMaxReached,
-    SequenceMaxReached,
+    SequenceMaxReached(u32),
     TimestampError,
+    MutexError,
     InvalidId,
 }
 
@@ -15,23 +15,23 @@ pub type Result<T> = std::result::Result<T, Error>;
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::MachineIdTooLarge => write!(
-                f, "the given machine id is too large."
+            Error::MachineIdInvalid => write!(
+                f, "machine id invalid"
             ),
-            Error::EpochTooLarge => write!(
-                f, "the requested epoch is too large."
-            ),
-            Error::EpochInFuture => write!(
-                f, "the requested epoch is in the future."
+            Error::EpochInvalid => write!(
+                f, "epoch invalid"
             ),
             Error::TimestampMaxReached => write!(
                 f, "max timestamp reached"
             ),
-            Error::SequenceMaxReached => write!(
+            Error::SequenceMaxReached(_) => write!(
                 f, "max sequence reached"
             ),
             Error::TimestampError => write!(
                 f, "timestamp error"
+            ),
+            Error::MutexError => write!(
+                f, "mutex error"
             ),
             Error::InvalidId => write!(
                 f, "invalid id provided"
