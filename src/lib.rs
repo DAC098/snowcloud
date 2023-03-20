@@ -2,6 +2,7 @@ use std::{
     sync::{
         Arc,
         Mutex,
+        Condvar,
     },
     time::{
         Instant,
@@ -12,6 +13,7 @@ use std::{
 pub mod error;
 
 const NANO_IN_MILLI: u32 = 1_000_000;
+const NANO_IN_MILLI_U128: u128 = 1_000_000;
 
 /// generates Snowcloud and Snowflake for the given bit sizes
 ///
@@ -36,8 +38,7 @@ macro_rules! gen_code {
         pub const SEQUENCE_MASK: i64 = MAX_SEQUENCE;
 
         /// id generated from a Snowcloud
-        #[derive(Eq, Hash, PartialEq, Debug)]
-        #[cfg_attr(test, derive(Clone))]
+        #[derive(Eq, Hash, PartialEq, Clone, Debug)]
         pub struct Snowflake {
             ts: i64,
             mid: i64,
@@ -83,17 +84,31 @@ macro_rules! gen_code {
         struct Counts {
             sequence: i64,
             prev_time: i64,
-            prev_nanos: u32,
         }
 
         /// generates Snowflakes from a given EPOCH and machine id
         ///
         /// uses an Arc Mutex to store prev_time and sequence data
-        #[derive(Clone)]
         pub struct Snowcloud {
             pub epoch: i64,
             pub machine_id: i64,
+            ready: Arc<(Mutex<bool>, Condvar)>,
+            prev_time: Arc<Mutex<i64>>,
+            sequence: Arc<Mutex<i64>>,
             counts: Arc<Mutex<Counts>>,
+        }
+
+        impl Clone for Snowcloud {
+            fn clone(&self) -> Snowcloud {
+                Snowcloud {
+                    epoch: self.epoch.clone(),
+                    machine_id: self.machine_id.clone(),
+                    ready: Arc::clone(&self.ready),
+                    prev_time: Arc::clone(&self.prev_time),
+                    sequence: Arc::clone(&self.sequence),
+                    counts: Arc::clone(&self.counts),
+                }
+            }
         }
 
         impl Snowcloud {
@@ -112,7 +127,7 @@ macro_rules! gen_code {
                     return Err(error::Error::EpochInvalid);
                 }
 
-                let (now, nanos) = ts_millis()?;
+                let (now, _) = ts_millis()?;
 
                 if epoch > now {
                     return Err(error::Error::EpochInvalid);
@@ -121,11 +136,13 @@ macro_rules! gen_code {
                 Ok(Snowcloud {
                     epoch,
                     machine_id,
+                    ready: Arc::new((Mutex::new(true), Condvar::new())),
+                    prev_time: Arc::new(Mutex::new(now)),
+                    sequence: Arc::new(Mutex::new(1)),
                     counts: Arc::new(Mutex::new(Counts {
                         sequence: 1,
                         prev_time: now,
-                        prev_nanos: nanos,
-                    })),
+                    }))
                 })
             }
 
@@ -137,13 +154,35 @@ macro_rules! gen_code {
             pub fn next_id(&self) -> error::Result<Snowflake> {
                 let (secs, nanos) = ts_millis()?;
                 let now = secs - self.epoch;
-                let mut seq_value: i64 = 1;
+                let seq_value: i64;
 
                 if now > MAX_TIMESTAMP {
                     return Err(error::Error::TimestampMaxReached);
                 }
 
-                {
+                if false {
+                    let Ok(mut prev_time_lock) = self.prev_time.lock() else {
+                        return Err(error::Error::MutexError);
+                    };
+                    let Ok(mut sequence_lock) = self.sequence.lock() else {
+                        return Err(error::Error::MutexError);
+                    };
+
+                    if now == *prev_time_lock {
+                        seq_value = *sequence_lock;
+
+                        if seq_value > MAX_SEQUENCE {
+                            return Err(error::Error::SequenceMaxReached(NANO_IN_MILLI - nanos));
+                        }
+
+                        *sequence_lock += 1;
+                    } else {
+                        seq_value = 1;
+
+                        *prev_time_lock = now;
+                        *sequence_lock = 2;
+                    }
+                } else {
                     let Ok(mut counts_lock) = self.counts.lock() else {
                         return Err(error::Error::MutexError);
                     };
@@ -152,17 +191,15 @@ macro_rules! gen_code {
                         seq_value = counts_lock.sequence;
 
                         if seq_value > MAX_SEQUENCE {
-                            counts_lock.prev_nanos = nanos;
-
                             return Err(error::Error::SequenceMaxReached(NANO_IN_MILLI - nanos));
                         }
 
                         counts_lock.sequence += 1;
-                        counts_lock.prev_nanos = nanos;
                     } else {
+                        seq_value = 1;
+
+                        counts_lock.prev_time = now.clone();
                         counts_lock.sequence = 2;
-                        counts_lock.prev_time = now;
-                        counts_lock.prev_nanos = nanos;
                     }
                 }
 
@@ -217,7 +254,7 @@ macro_rules! gen_code {
     };
 }
 
-gen_code!(42, 8, 13);
+gen_code!(43, 8, 12);
 
 /// returns current UNIX EPOCH in milliseconds
 fn ts_millis() -> error::Result<(i64,u32)> {
@@ -227,11 +264,15 @@ fn ts_millis() -> error::Result<(i64,u32)> {
         return Err(error::Error::TimestampError);
     };
 
-    let Ok(cast) = i64::try_from(duration.as_millis()) else {
+    let as_nanos = duration.as_nanos();
+    let millis = as_nanos / NANO_IN_MILLI_U128;
+    let nanos = (as_nanos % NANO_IN_MILLI_U128) as u32;
+
+    let Ok(cast) = i64::try_from(millis) else {
         return Err(error::Error::TimestampError);
     };
 
-    Ok((cast, duration.subsec_nanos()))
+    Ok((cast, nanos))
 }
 
 /// busy spins for one millisecond from the given start instant
@@ -241,7 +282,7 @@ fn spin_one_milli(to_next_milli: u32) -> () {
     loop {
         let duration = start.elapsed().subsec_nanos();
 
-        let Some(diff) = to_next_milli.checked_sub(duration) else {
+        let Some(_diff) = to_next_milli.checked_sub(duration) else {
             break;
         };
 

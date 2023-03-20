@@ -1,18 +1,9 @@
 [package]
-name = "snowcloud"
+name = "custom_test"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[[bench]]
-name = "gen"
-harness = false
-
-[workspace]
-members = ["custom_test"]
-
 [dependencies]
-
-[dev-dependencies]
-criterion = "0.4"
+snowcloud = { path = "../" }
