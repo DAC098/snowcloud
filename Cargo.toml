@@ -9,9 +9,6 @@ edition = "2021"
 name = "gen"
 harness = false
 
-[workspace]
-members = ["custom_test"]
-
 [dependencies]
 
 [dev-dependencies]

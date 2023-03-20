@@ -2,7 +2,6 @@ use std::{
     sync::{
         Arc,
         Mutex,
-        Condvar,
     },
     time::{
         Instant,
@@ -46,16 +45,44 @@ macro_rules! gen_code {
         }
 
         impl Snowflake {
+            /// returns timestamp reference
             pub fn timestamp(&self) -> &i64 {
                 &self.ts
             }
 
+            /// returns machine id reference
             pub fn machine_id(&self) -> &i64 {
                 &self.mid
             }
 
+            /// returns sequence reference
             pub fn sequence(&self) -> &i64 {
                 &self.seq
+            }
+
+            /// generates a Snowflake from the provided parts
+            ///
+            /// checks will be performed on each part to ensure that they are
+            /// valid for the given Snowflake
+            pub fn from_parts(ts: i64, mid: i64, seq: i64) -> error::Result<Snowflake> {
+                if ts < 0 || ts > MAX_TIMESTAMP {
+                    return Err(error::Error::EpochInvalid);
+                }
+
+                if mid < 0 || mid > MAX_MACHINE_ID {
+                    return Err(error::Error::MachineIdInvalid);
+                }
+
+                if seq < 0 || seq > MAX_SEQUENCE {
+                    return Err(error::Error::SequenceInvalid);
+                }
+
+                Ok(Snowflake { ts, mid, seq })
+            }
+
+            /// splits the current Snowflake into its individual parts
+            pub fn into_parts(self) -> (i64, i64, i64) {
+                (self.ts, self.mid, self.seq)
             }
         }
 
@@ -81,20 +108,19 @@ macro_rules! gen_code {
             }
         }
 
+        /// stores sequence and prev_time for a Snowcloud
+        ///
+        /// is guarded by an Arc Mutex since this data is shared between
+        /// threads
         struct Counts {
             sequence: i64,
             prev_time: i64,
         }
 
         /// generates Snowflakes from a given EPOCH and machine id
-        ///
-        /// uses an Arc Mutex to store prev_time and sequence data
         pub struct Snowcloud {
-            pub epoch: i64,
-            pub machine_id: i64,
-            ready: Arc<(Mutex<bool>, Condvar)>,
-            prev_time: Arc<Mutex<i64>>,
-            sequence: Arc<Mutex<i64>>,
+            epoch: i64,
+            machine_id: i64,
             counts: Arc<Mutex<Counts>>,
         }
 
@@ -103,9 +129,6 @@ macro_rules! gen_code {
                 Snowcloud {
                     epoch: self.epoch.clone(),
                     machine_id: self.machine_id.clone(),
-                    ready: Arc::clone(&self.ready),
-                    prev_time: Arc::clone(&self.prev_time),
-                    sequence: Arc::clone(&self.sequence),
                     counts: Arc::clone(&self.counts),
                 }
             }
@@ -136,14 +159,21 @@ macro_rules! gen_code {
                 Ok(Snowcloud {
                     epoch,
                     machine_id,
-                    ready: Arc::new((Mutex::new(true), Condvar::new())),
-                    prev_time: Arc::new(Mutex::new(now)),
-                    sequence: Arc::new(Mutex::new(1)),
                     counts: Arc::new(Mutex::new(Counts {
                         sequence: 1,
                         prev_time: now,
                     }))
                 })
+            }
+
+            /// returns Snowcloud epoch
+            pub fn get_epoch(&self) -> &i64 {
+                &self.epoch
+            }
+
+            /// returns Snowcloud machine_id
+            pub fn get_machine_id(&self) -> &i64 {
+                &self.machine_id
             }
 
             /// retrieves the next available id
@@ -152,55 +182,54 @@ macro_rules! gen_code {
             /// reached, or if it fails to get the current timestamp this will
             /// return an error.
             pub fn next_id(&self) -> error::Result<Snowflake> {
-                let (secs, nanos) = ts_millis()?;
-                let now = secs - self.epoch;
                 let seq_value: i64;
+                let now: i64;
 
-                if now > MAX_TIMESTAMP {
-                    return Err(error::Error::TimestampMaxReached);
-                }
-
-                if false {
-                    let Ok(mut prev_time_lock) = self.prev_time.lock() else {
-                        return Err(error::Error::MutexError);
-                    };
-                    let Ok(mut sequence_lock) = self.sequence.lock() else {
-                        return Err(error::Error::MutexError);
-                    };
-
-                    if now == *prev_time_lock {
-                        seq_value = *sequence_lock;
-
-                        if seq_value > MAX_SEQUENCE {
-                            return Err(error::Error::SequenceMaxReached(NANO_IN_MILLI - nanos));
-                        }
-
-                        *sequence_lock += 1;
-                    } else {
-                        seq_value = 1;
-
-                        *prev_time_lock = now;
-                        *sequence_lock = 2;
-                    }
-                } else {
+                {
+                    // lock down counts for the current thread
                     let Ok(mut counts_lock) = self.counts.lock() else {
                         return Err(error::Error::MutexError);
                     };
 
+                    // since we do not know when the lock will be freed we
+                    // have to get the time once the lock is freed to have
+                    // an accurate timestamp
+                    let (secs, nanos) = ts_millis()?;
+                    now = secs - self.epoch;
+
+                    if now > MAX_TIMESTAMP {
+                        return Err(error::Error::TimestampMaxReached);
+                    }
+
+                    // if we are still on the previously recorded millisecond
+                    // then we increment the sequence
                     if now == counts_lock.prev_time {
                         seq_value = counts_lock.sequence;
 
+                        // before we increment, check to make sure that we
+                        // have not reached the maximum sequence value. if
+                        // we have then given an estimate to the next
+                        // millisecond so that then user can decided on
+                        // how to wait for the next available value
                         if seq_value > MAX_SEQUENCE {
                             return Err(error::Error::SequenceMaxReached(NANO_IN_MILLI - nanos));
                         }
 
+                        // increment to the next sequence number
                         counts_lock.sequence += 1;
                     } else {
+                        // we are not on the previousely recorded millisecond
+                        // so the sequence value will be set to one
                         seq_value = 1;
 
+                        // set the previous time to now and prep for the next
+                        // available sequence number
                         counts_lock.prev_time = now.clone();
                         counts_lock.sequence = 2;
                     }
+
+                // counts_lock should be dropped and the mutext should now be
+                // unlocked for the next 
                 }
 
                 /* 
@@ -291,157 +320,4 @@ fn spin_one_milli(to_next_milli: u32) -> () {
 }
 
 #[cfg(test)]
-mod test {
-    use std::sync::{Arc, Barrier};
-    use std::collections::{HashMap, HashSet};
-    use std::thread;
-    use std::io::Write as _;
-
-    use super::*;
-
-    const START_TIME: i64 = 1679082337000;
-    const MACHINE_ID: i64 = 1;
-
-    #[test]
-    fn unique_ids_single_thread() -> () {
-        let cloud = Snowcloud::new(MACHINE_ID, START_TIME).unwrap();
-        let mut unique_ids: HashSet<i64> = HashSet::new();
-        let mut generated: Vec<Snowflake> = Vec::new();
-
-        for _ in 0..MAX_SEQUENCE {
-            let flake = cloud.spin_next_id().expect("failed spin_next_id");
-            let id: i64 = flake.clone().into();
-
-            assert!(
-                unique_ids.insert(id), 
-                "encountered an id that was already generated. id: {:#?}\ngenerated: {:#?}", 
-                flake,
-                generated
-            );
-
-            generated.push(flake.clone());
-        }
-    }
-
-    #[test]
-    fn unique_ids_multi_threads() -> () {
-        let barrier = Arc::new(Barrier::new(3));
-        let mut handles = Vec::with_capacity(3);
-        let cloud = Snowcloud::new(MACHINE_ID, START_TIME).unwrap();
-
-        for _ in 0..handles.capacity() {
-            let b = Arc::clone(&barrier);
-            let c = cloud.clone();
-
-            handles.push(thread::spawn(move || {
-                let mut id_list = Vec::with_capacity(MAX_SEQUENCE as usize);
-                b.wait();
-
-                for _ in 0..MAX_SEQUENCE {
-                    id_list.push(c.spin_next_id().expect("failed spin_next_id"));
-                }
-
-                id_list
-            }));
-        }
-
-        let mut failed = false;
-        let mut thread: usize = 0;
-        let mut unique_ids: HashMap<Snowflake, Vec<(usize, usize)>> = HashMap::new();
-        let mut thread_list: Vec<Vec<Snowflake>> = Vec::with_capacity(handles.len());
-
-        for handle in handles {
-            let list = handle.join().expect("thread paniced");
-
-            thread_list.push(list);
-
-            for index in 0..thread_list[thread].len() {
-                let flake = &thread_list[thread][index];
-
-                if let Some(dups) = unique_ids.get_mut(flake) {
-                    failed = true;
-                    dups.push((thread, index));
-                } else {
-                    let mut dups = Vec::with_capacity(1);
-                    dups.push((thread, index));
-
-                    unique_ids.insert(flake.clone(), dups);
-                }
-            }
-
-            thread += 1;
-        }
-
-        if !failed {
-            return;
-        }
-
-        let mut debug_output = std::fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open("unique_id_multi_thread.debug.txt")
-            .expect("failed to create debug_file");
-
-        for (flake, dups) in unique_ids {
-            if dups.len() > 1 {
-                debug_output.write_fmt(format_args!("flake {} {}\n", flake.ts, flake.seq)).unwrap();
-
-                for (thread, index) in dups {
-                    debug_output.write_fmt(format_args!("thread {}\n", thread)).unwrap();
-
-                    let (mut low, of) = index.overflowing_sub(3);
-                    let mut next = index + 1;
-                    let mut high = next + 3;
-
-                    if of {
-                        low = 0;
-                    }
-
-                    if next > thread_list[thread].len() {
-                        next = thread_list[thread].len();
-                        high = thread_list[thread].len();
-                    } else if high > thread_list[thread].len() {
-                        high = thread_list[thread].len();
-                    }
-
-                    let index_decimals = (high.checked_ilog10().unwrap_or(0) + 1) as usize;
-
-                    for prev_index in low..index {
-                        debug_output.write_fmt(format_args!(
-                            "{:width$} {} {}\n", 
-                            prev_index,
-                            thread_list[thread][prev_index].ts,
-                            thread_list[thread][prev_index].seq,
-                            width = index_decimals,
-                        )).unwrap();
-                    }
-
-                    debug_output.write_fmt(format_args!(
-                        "{:width$} {} {} dupliate\n",
-                        index,
-                        thread_list[thread][index].ts,
-                        thread_list[thread][index].seq,
-                        width = index_decimals,
-                    )).unwrap();
-
-                    if index != next {
-                        for next_index in next..high {
-                            debug_output.write_fmt(format_args!(
-                                "{:width$} {} {}\n",
-                                next_index,
-                                thread_list[thread][next_index].ts,
-                                thread_list[thread][next_index].seq,
-                                width = index_decimals,
-                            )).unwrap();
-                        }
-                    }
-                }
-
-                debug_output.write_fmt(format_args!("\n")).unwrap();
-            }
-        }
-
-        panic!("encountered duplidate ids. check unique_id_multi_thread.deubg.txt for output");
-    }
-}
+mod test;

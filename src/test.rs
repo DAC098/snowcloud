@@ -3,11 +3,12 @@ use std::collections::{HashMap, HashSet};
 use std::thread;
 use std::io::Write as _;
 
-use snowcloud::*;
+use super::*;
 
 const START_TIME: i64 = 1679082337000;
 const MACHINE_ID: i64 = 1;
 
+#[test]
 fn unique_ids_single_thread() -> () {
     let cloud = Snowcloud::new(MACHINE_ID, START_TIME).unwrap();
     let mut unique_ids: HashSet<i64> = HashSet::new();
@@ -28,6 +29,7 @@ fn unique_ids_single_thread() -> () {
     }
 }
 
+#[test]
 fn unique_ids_multi_threads() -> () {
     let start = std::time::Instant::now();
     let barrier = Arc::new(Barrier::new(3));
@@ -304,11 +306,4 @@ fn unique_ids_multi_threads() -> () {
     }
 
     panic!("encountered duplidate ids. check unique_id_multi_thread.deubg.txt for output");
-}
-
-fn main() {
-    unique_ids_single_thread();
-    println!("finished single thread test");
-    unique_ids_multi_threads();
-    println!("finished multi thread test");
 }
