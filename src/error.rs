@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 /// possible errors for Snowclouds/Snowflakes
 #[derive(Debug)]
 pub enum Error {
@@ -21,7 +23,7 @@ pub enum Error {
     /// the max possible sequence value has been reached when generating a
     /// new id. the returned u32 is an estimate on how long to wait for the
     /// next millisecond
-    SequenceMaxReached(u32),
+    SequenceMaxReached(Duration),
 
     /// failed to get a valid UNIX EPOCH timestamp
     TimestampError,
@@ -72,3 +74,8 @@ impl std::error::Error for Error {
     }
 }
 
+impl From<std::time::SystemTimeError> for Error {
+    fn from(_: std::time::SystemTimeError) -> Error {
+        Error::TimestampError
+    }
+}

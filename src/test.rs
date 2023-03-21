@@ -1,5 +1,5 @@
 use std::sync::{Arc, Barrier};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::thread;
 use std::io::Write as _;
 
@@ -11,22 +11,101 @@ const MACHINE_ID: i64 = 1;
 #[test]
 fn unique_ids_single_thread() -> () {
     let cloud = Snowcloud::new(MACHINE_ID, START_TIME).unwrap();
-    let mut unique_ids: HashSet<i64> = HashSet::new();
-    let mut generated: Vec<Snowflake> = Vec::new();
+    let mut found_dups = false;
+    let mut total_found: usize = 0;
+    let mut unique_ids: HashMap<i64, Vec<(usize, Snowflake)>> = HashMap::new();
+    let mut generated: Vec<Snowflake> = Vec::with_capacity(MAX_SEQUENCE as usize);
 
-    for _ in 0..MAX_SEQUENCE {
-        let flake = cloud.spin_next_id().expect("failed spin_next_id");
-        let id: i64 = flake.clone().into();
-
-        assert!(
-            unique_ids.insert(id), 
-            "encountered an id that was already generated. id: {:#?}\ngenerated: {:#?}", 
-            flake,
-            generated
-        );
-
-        generated.push(flake.clone());
+    for _ in 0..generated.capacity() {
+        generated.push(cloud.next_id().expect("failed next_id"));
     }
+
+    for i in 0..generated.len() {
+        let flake = &generated[i];
+        let id: i64 = flake.id();
+
+        if let Some(dups) = unique_ids.get_mut(&id) {
+            found_dups = true;
+            total_found += 1;
+
+            dups.push((i, flake.clone()));
+        } else {
+            let mut dups = Vec::with_capacity(1);
+            dups.push((i, flake.clone()));
+
+            unique_ids.insert(id, dups);
+        }
+    }
+
+    if !found_dups {
+        return;
+    }
+
+    let seq_width = (MAX_SEQUENCE.checked_ilog10().unwrap_or(0) + 1) as usize;
+    let index_width = (generated.len().checked_ilog10().unwrap_or(0) + 1) as usize;
+    let mut debug_output = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open("unique_id_single_thread.debug.txt")
+        .expect("failed to create debug_file");
+
+    debug_output.write_fmt(format_args!("total found: {} / {}", total_found, generated.len())).unwrap();
+
+    for flake in &generated {
+        let id = flake.id();
+
+        if let Some(dups) = unique_ids.get(&id) {
+            if dups.len() > 1 {
+                total_found += 1;
+
+                debug_output.write_fmt(format_args!(
+                    "flake: {}\n",
+                    id
+                )).unwrap();
+
+                for dup in dups {
+                    debug_output.write_fmt(format_args!(
+                        "index: {:index_width$} {} {} {:seq_width$} | {}.{}\n",
+                        dup.0,
+                        dup.1.timestamp(),
+                        dup.1.machine_id(),
+                        dup.1.sequence(),
+                        dup.1.duration().as_secs(),
+                        dup.1.duration().subsec_nanos(),
+                        index_width = index_width,
+                        seq_width = seq_width,
+                    )).unwrap();
+                }
+            }
+        }
+    }
+
+    debug_output.write(b"\n").unwrap();
+
+    for index in 0..generated.len() {
+        let mut is_dup = false;
+        let id = generated[index].id();
+
+        if let Some(dups) = unique_ids.get(&id) {
+            is_dup = dups.len() > 1;
+        }
+
+        debug_output.write_fmt(format_args!(
+            "{:index_width$} {} {} {:seq_width$} | {}.{} {}\n",
+            index,
+            generated[index].timestamp(),
+            generated[index].machine_id(),
+            generated[index].sequence(),
+            generated[index].duration().as_secs(),
+            generated[index].duration().subsec_nanos(),
+            if is_dup { 'd' } else { ' ' },
+            index_width = index_width,
+            seq_width = seq_width,
+        )).unwrap();
+    }
+
+    panic!("encountered duplidate ids. check unique_id_single_thread.debug.txt for details"); 
 }
 
 #[test]
