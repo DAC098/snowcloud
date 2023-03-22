@@ -3,7 +3,11 @@ use std::collections::HashMap;
 use std::thread;
 use std::io::Write as _;
 
-use super::*;
+use super::{
+    Snowcloud, 
+    Snowflake,
+    MAX_SEQUENCE,
+};
 
 const START_TIME: i64 = 1679082337000;
 const MACHINE_ID: i64 = 1;
@@ -125,8 +129,12 @@ fn unique_ids_multi_threads() -> () {
             b.wait();
 
             for _ in 0..MAX_SEQUENCE {
+                let Some(result) = super::blocking_next_id(&c, 2) else {
+                    panic!("ran out of spin_next_id attempts");
+                };
+
                 id_list.push((
-                    c.spin_next_id().expect("failed spin_next_id"),
+                    result.expect("failed spin_next_id"),
                     t.elapsed()
                 ));
             }
@@ -385,4 +393,22 @@ fn unique_ids_multi_threads() -> () {
     }
 
     panic!("encountered duplidate ids. check unique_id_multi_thread.deubg.txt for output");
+}
+
+#[test]
+fn single_thread_blocking_next_id() -> () {
+    let cloud = Snowcloud::new(MACHINE_ID, START_TIME).unwrap();
+    let mut previous = None;
+
+    for _ in 0..(MAX_SEQUENCE as usize * 3) {
+        let Some(result) = super::blocking_next_id(&cloud, 2) else {
+            panic!(
+                "ran out of attempts. previous flake: {:#?} cloud prev_time: {:#?}", 
+                previous,
+                cloud.counts.lock().unwrap().prev_time
+            );
+        };
+
+        previous = Some(result.expect("failed to generate snowflake"));
+    }
 }

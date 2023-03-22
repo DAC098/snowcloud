@@ -18,7 +18,11 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         let cloud = snowcloud::Snowcloud::new(MACHINE_ID, START_TIME).unwrap();
 
         for _ in 0..(snowcloud::MAX_SEQUENCE * 3) {
-            cloud.spin_next_id().expect("error generating id");
+            let Some(result) = snowcloud::blocking_next_id(&cloud, 2) else {
+                panic!("ran out of spin_next_id attempts");
+            };
+
+            result.expect("error generating id");
         }
     }));
 }

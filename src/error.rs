@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use crate::traits;
+
 /// possible errors for Snowclouds/Snowflakes
 #[derive(Debug)]
 pub enum Error {
@@ -77,5 +79,14 @@ impl std::error::Error for Error {
 impl From<std::time::SystemTimeError> for Error {
     fn from(_: std::time::SystemTimeError) -> Error {
         Error::TimestampError
+    }
+}
+
+impl traits::NextAvailId for Error {
+    fn next_avail_id(&self) -> Option<&Duration> {
+        match self {
+            Error::SequenceMaxReached(dur) => Some(dur),
+            _ => None
+        }
     }
 }
