@@ -2,27 +2,26 @@ use criterion::{criterion_group, criterion_main, Criterion};
 
 use snowcloud;
 
-const START_TIME: i64 = 946684800000;
+type BenchMultiThread = snowcloud::MultiThread<43, 8, 12>;
+type BenchSingleThread = snowcloud::SingleThread<43, 8, 12>;
+
+const START_TIME: u64 = 946684800000;
 const MACHINE_ID: i64 = 1;
 
 pub fn criterion_benchmark(c: &mut Criterion) {
-    c.bench_function("gen MAX_SEQUENCE", |b| b.iter(|| {
-        let cloud = snowcloud::Snowcloud::new(MACHINE_ID, START_TIME).unwrap();
+    c.bench_function("gen MultiThread MAX_SEQUENCE", |b| b.iter(|| {
+        let cloud = BenchMultiThread::new(MACHINE_ID, START_TIME).unwrap();
 
-        for _ in 0..snowcloud::MAX_SEQUENCE {
+        for _ in 0..BenchMultiThread::MAX_SEQUENCE {
             cloud.next_id().expect("error generating id");
         }
     }));
 
-    c.bench_function("gen 3xMAX_SEQUENCE", |b| b.iter(|| {
-        let cloud = snowcloud::Snowcloud::new(MACHINE_ID, START_TIME).unwrap();
+    c.bench_function("gen SingleThread MAX_SEQUENCE", |b| b.iter(|| {
+        let mut cloud = BenchSingleThread::new(MACHINE_ID, START_TIME).unwrap();
 
-        for _ in 0..(snowcloud::MAX_SEQUENCE * 3) {
-            let Some(result) = snowcloud::blocking_next_id(&cloud, 2) else {
-                panic!("ran out of spin_next_id attempts");
-            };
-
-            result.expect("error generating id");
+        for _ in 0..BenchSingleThread::MAX_SEQUENCE {
+            cloud.next_id().expect("error generating id");
         }
     }));
 }

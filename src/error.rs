@@ -6,9 +6,9 @@ use crate::traits;
 #[derive(Debug)]
 pub enum Error {
 
-    /// a provided machine id is less than 0 or greater than the max value
+    /// a provided primary id is less than 0 or greater than the max value
     /// specified by a Snowcloud
-    MachineIdInvalid,
+    PrimaryIdInvalid,
 
     /// a provided epoch is less than 0 or greater than the max value
     /// specified by a Snowcloud
@@ -23,8 +23,8 @@ pub enum Error {
     TimestampMaxReached,
 
     /// the max possible sequence value has been reached when generating a
-    /// new id. the returned u32 is an estimate on how long to wait for the
-    /// next millisecond
+    /// new id. the returned duration is an estimate on how long to wait for 
+    /// the next millisecond
     SequenceMaxReached(Duration),
 
     /// failed to get a valid UNIX EPOCH timestamp
@@ -42,8 +42,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::MachineIdInvalid => write!(
-                f, "machine id invalid"
+            Error::PrimaryIdInvalid => write!(
+                f, "primary id invalid"
             ),
             Error::EpochInvalid => write!(
                 f, "epoch invalid"
