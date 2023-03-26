@@ -8,7 +8,7 @@ use crate::cloud::common::{Counts, NANOSECOND, MILLI_IN_SECOND};
 /// non-thread safe generator
 #[derive(Clone)]
 pub struct SingleThread<const TS: u8, const PID: u8, const SEQ: u8> {
-    epoch: SystemTime,
+    ep: SystemTime,
     pid: i64,
     counts: Counts,
 }
@@ -45,7 +45,7 @@ impl<const TS: u8, const PID: u8, const SEQ: u8> SingleThread<TS, PID, SEQ> {
         let prev_time = sys_time.elapsed()?;
 
         Ok(SingleThread {
-            epoch: sys_time,
+            ep: sys_time,
             pid,
             counts: Counts {
                 sequence: 1,
@@ -55,12 +55,12 @@ impl<const TS: u8, const PID: u8, const SEQ: u8> SingleThread<TS, PID, SEQ> {
     }
 
     /// returns epoch
-    pub fn get_epoch(&self) -> &SystemTime {
-        &self.epoch
+    pub fn epoch(&self) -> &SystemTime {
+        &self.ep
     }
 
     /// returns primary id
-    pub fn get_primary_id(&self) -> &i64 {
+    pub fn primary_id(&self) -> &i64 {
         &self.pid
     }
 
@@ -72,7 +72,7 @@ impl<const TS: u8, const PID: u8, const SEQ: u8> SingleThread<TS, PID, SEQ> {
     pub fn next_id(&mut self) -> error::Result<Snowflake<TS, PID, SEQ>> {
         let seq: i64;
 
-        let ts = self.epoch.elapsed()?;
+        let ts = self.ep.elapsed()?;
 
         if ts > Self::MAX_DURATION {
             return Err(error::Error::TimestampMaxReached);

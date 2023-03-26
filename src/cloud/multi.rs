@@ -8,7 +8,7 @@ use crate::cloud::common::{Counts, NANOSECOND, MILLI_IN_SECOND};
 
 /// thread safe snowcloud
 pub struct MultiThread<const TS: u8, const PID: u8, const SEQ: u8> {
-    epoch: SystemTime,
+    ep: SystemTime,
     pid: i64,
     counts: Arc<Mutex<Counts>>,
 }
@@ -16,7 +16,7 @@ pub struct MultiThread<const TS: u8, const PID: u8, const SEQ: u8> {
 impl<const TS: u8, const PID: u8, const SEQ: u8> Clone for MultiThread<TS, PID, SEQ> {
     fn clone(&self) -> Self {
         MultiThread {
-            epoch: self.epoch,
+            ep: self.ep,
             pid: self.pid,
             counts: Arc::clone(&self.counts),
         }
@@ -55,7 +55,7 @@ impl<const TS: u8, const PID: u8, const SEQ: u8> MultiThread<TS, PID, SEQ> {
         let prev_time = sys_time.elapsed()?;
 
         Ok(MultiThread {
-            epoch: sys_time,
+            ep: sys_time,
             pid,
             counts: Arc::new(Mutex::new(Counts {
                 sequence: 1,
@@ -65,12 +65,12 @@ impl<const TS: u8, const PID: u8, const SEQ: u8> MultiThread<TS, PID, SEQ> {
     }
 
     /// returns epoch
-    pub fn get_epoch(&self) -> &SystemTime {
-        &self.epoch
+    pub fn epoch(&self) -> &SystemTime {
+        &self.ep
     }
 
     /// returns primary_id
-    pub fn get_primary_id(&self) -> &i64 {
+    pub fn primary_id(&self) -> &i64 {
         &self.pid
     }
 
@@ -93,7 +93,7 @@ impl<const TS: u8, const PID: u8, const SEQ: u8> MultiThread<TS, PID, SEQ> {
             // since we do not know when the lock will be freed we
             // have to get the time once the lock is freed to have
             // an accurate timestamp
-            ts = self.epoch.elapsed()?;
+            ts = self.ep.elapsed()?;
 
             if ts > Self::MAX_DURATION {
                 return Err(error::Error::TimestampMaxReached);
