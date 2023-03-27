@@ -6,6 +6,30 @@ use crate::flake::Snowflake;
 use crate::cloud::common::{Counts, NANOSECOND, MILLI_IN_SECOND};
 
 /// non-thread safe generator
+///
+/// since the previous time and sequence count are not guarded, next id is
+/// considered a mutating call and not thread safe. otherwise operates in
+/// a similar fashion as [`MultiThread`](crate::MultiThread).
+///
+/// if you want to wait for the next available id without calling the function
+/// again check out [`blocking_next_id_mut`](crate::wait::blocking_next_id_mut)
+/// or other waiting methods depending on how you want to wait for the next
+/// available id.
+///
+/// ```rust
+/// type MyCloud = snowcloud::SingleThread<43, 8, 12>;
+///
+/// const START_TIME: u64 = 1679587200000;
+/// const PRIMARY_ID: i64 = 1;
+///
+/// let mut cloud = MyCloud::new(PRIMARY_ID, START_TIME)
+///     .expect("failed to create MyCloud");
+///
+/// println!("epoch: {:?}", cloud.epoch());
+/// println!("primary_id: {}", cloud.primary_id());
+///
+/// println!("{:?}", cloud.next_id());
+/// ```
 #[derive(Clone)]
 pub struct SingleThread<const TS: u8, const PID: u8, const SEQ: u8> {
     ep: SystemTime,

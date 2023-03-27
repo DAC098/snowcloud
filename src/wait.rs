@@ -34,6 +34,26 @@ fn block_duration(dur: &Duration) {
 ///
 /// if total attempts reaches 0 then the result will be none otherwise will be
 /// some with whatever happened when generating the id
+///
+/// ```rust
+/// type MyCloud = snowcloud::MultiThread<43, 8, 12>;
+///
+/// const START_TIME: u64 = 1679587200000;
+/// const PRIMARY_ID: i64 = 1;
+///
+/// let cloud = MyCloud::new(PRIMARY_ID, START_TIME)
+///     .expect("failed to create MyCloud");
+///
+/// // create more snowflakes than what is possible in a millisecond
+/// for _ in 0..(MyCloud::MAX_SEQUENCE as usize * 2) {
+///     let Some(flake) = snowcloud::wait::blocking_next_id(&cloud, 2)
+///         .expect("failed to create snowflake") else {
+///         println!("ran out of attempts to get a new snowflake");
+///     };
+///
+///     println!("{}", flake.id());
+/// }
+/// ```
 pub fn blocking_next_id<C>(cloud: &C, mut attempts: u8) -> Option<std::result::Result<C::Id, C::Error>> 
 where
     C: IdGenerator,
@@ -61,6 +81,29 @@ where
 }
 
 /// mutable version of [`blocking_next_id`]
+///
+/// if total attempts reaches 0 then the result will be None otherwise will be
+/// some with whatever happened when generating the id
+///
+/// ```rust
+/// type MyCloud = snowcloud::SingleThread<43, 8, 12>;
+///
+/// const START_TIME: u64 = 1679587200000;
+/// const PRIMARY_ID: i64 = 1;
+///
+/// let mut cloud = MyCloud::new(PRIMARY_ID, START_TIME)
+///     .expect("failed to create MyCloud");
+///
+/// // create more snowflakes than what is possible in a millisecond
+/// for _ in 0..(MyCloud::MAX_SEQUENCE as usize * 2) {
+///     let Some(flake) = snowcloud::wait::blocking_next_id_mut(&mut cloud, 2)
+///         .expect("failed to create snowflake") else {
+///         println!("ran out of attempts to get a new snowflake");
+///     };
+///
+///     println!("{}", flake.id());
+/// }
+/// ```
 pub fn blocking_next_id_mut<C>(cloud: &mut C, mut attempts: u8) -> Option<std::result::Result<C::Id, C::Error>>
 where
     C: IdGeneratorMut,

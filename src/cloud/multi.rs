@@ -7,6 +7,30 @@ use crate::flake::Snowflake;
 use crate::cloud::common::{Counts, NANOSECOND, MILLI_IN_SECOND};
 
 /// thread safe snowcloud
+///
+/// guards the previous time and sequence count behind an
+/// [`Arc`](std::sync::Arc) [`Mutex`](std::sync::Mutex). the critical section
+/// is small and will not block if its unable to get a valid snowflake.
+///
+/// if you want to wait for the next available id without calling the function
+/// again check out [`blocking_next_id`](crate::wait::blocking_next_id) or
+/// other waiting methods depending on how you want to wait for the next 
+/// available id.
+///
+/// ```rust
+/// type MyCloud = snowcloud::MultiThread<43, 8, 12>;
+///
+/// const START_TIME: u64 = 1679587200000;
+/// const PRIMARY_ID: i64 = 1;
+///
+/// let cloud = MyCloud::new(PRIMARY_ID, START_TIME)
+///     .expect("failed to create MyCloud");
+///
+/// println!("epoch: {:?}", cloud.epoch());
+/// println!("primary_id: {}", cloud.primary_id());
+///
+/// println!("{:?}", cloud.next_id());
+/// ```
 pub struct MultiThread<const TS: u8, const PID: u8, const SEQ: u8> {
     ep: SystemTime,
     pid: i64,

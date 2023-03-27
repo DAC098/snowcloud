@@ -12,8 +12,10 @@
 //! // primary id could be a machine/node id for example
 //! const PRIMARY_ID: i64 = 1;
 //!
-//! let mut cloud = MyCloud::new(PRIMARY_ID, START_TIME).unwrap();
-//! let flake = cloud.next_id().unwrap();
+//! let mut cloud = MyCloud::new(PRIMARY_ID, START_TIME)
+//!     .expect("failed to create MyCloud");
+//! let flake = cloud.next_id()
+//!     .expect("failed to create snowflake");
 //!
 //! println!("{}", flake.id());
 //! ```

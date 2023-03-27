@@ -3,6 +3,39 @@ use std::time::Duration;
 use crate::traits;
 
 /// possible errors for Snowclouds/Snowflakes
+///
+/// since the errors are not very complex no additional information is provided
+/// except for SequenceMaxReached that provides the duration to the next
+/// millisecond.
+///
+/// this error implements [`NextAvailId`](crate::traits::NextAvailId) if being
+/// used in a generic way.
+///
+/// ```rust
+/// type MyCloud = snowcloud::SingleThread<43, 8, 12>;
+///
+/// const START_TIME: u64 = 1679587200000;
+/// const PRIMARY_ID: i64 = 1;
+///
+/// let mut cloud = MyCloud::new(PRIMARY_ID, START_TIME)
+///     .expect("failed to create MyCloud");
+///
+/// match cloud.next_id() {
+///     Ok(flake) => {
+///         println!("{}", flake.id());
+///     },
+///     Err(err) => {
+///         match err {
+///             SequenceMaxReached(dur) => {
+///                 // we can wait for the specified duration to try again
+///             },
+///             _ => {
+///                 println!("{}", err);
+///             }
+///         }
+///     }
+/// }
+/// ```
 #[derive(Debug)]
 pub enum Error {
 
