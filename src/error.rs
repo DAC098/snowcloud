@@ -12,6 +12,7 @@ use crate::traits;
 /// used in a generic way.
 ///
 /// ```rust
+/// use snowcloud::Error::SequenceMaxReached;
 /// type MyCloud = snowcloud::SingleThread<43, 8, 12>;
 ///
 /// const START_TIME: u64 = 1679587200000;

@@ -24,6 +24,10 @@ println!("{}", flake.id());
 
 check out the [docs](https://docs.rs/snowcloud) for more information
 
+## Features
+
+ - de/serialize: supports serializing and deserializing snowflakes into integers or strings using [serde](https://serde.rs)
+
 ## State
 
 there are additions that can be added. 

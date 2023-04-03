@@ -1,7 +1,15 @@
 use std::time::Duration;
 use std::hash::Hasher;
 
+#[cfg(feature = "serde")]
+use std::fmt;
+#[cfg(feature = "serde")]
+use serde::{de, ser};
+
 use crate::error;
+
+#[cfg(feature = "serde")]
+pub mod serde_ext;
 
 /// id generated from a Snowcloud
 ///
@@ -33,6 +41,33 @@ use crate::error;
 ///     .expect("invalid i64 was provided");
 /// println!("{:?}", and_back);
 /// ```
+///
+/// # De/Serialize
+///
+/// with the `serde` feature you can de/serialize a snowflake to and from an
+/// [`i64`](core::primitive::i64) by default
+///
+/// ```rust
+/// use serde::{Serialize, Deserialize};
+/// use snowcloud::serde_ext;
+///
+/// type MyFlake = snowcloud::Snowflake<43, 8, 12>;
+///
+/// #[derive(Serialize, Deserialize)]
+/// pub struct MyStruct {
+///     id: MyFlake
+/// }
+///
+/// let my_struct = MyStruct {
+///     id: MyFlake::from_parts(1, 1, 1).unwrap(),
+/// };
+///
+/// let json_string = serde_json::to_string(&my_struct).unwrap();
+///
+/// println!("{}", json_string);
+/// ```
+///
+/// if you want more options check out [`serde_ext`](crate::serde_ext)
 #[derive(Eq, Clone)]
 pub struct Snowflake<const TS: u8, const PID: u8, const SEQ: u8> {
     pub(crate) ts: Duration,
@@ -195,6 +230,62 @@ impl<const TS: u8, const PID: u8, const SEQ: u8> TryFrom<&i64> for Snowflake<TS,
     }
 }
 
+#[cfg(feature = "serde")]
+impl<const TS: u8, const PID: u8, const SEQ: u8> ser::Serialize for Snowflake<TS, PID, SEQ> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: ser::Serializer
+    {
+        let id = self.id();
+
+        serializer.serialize_i64(id)
+    }
+}
+
+#[cfg(feature = "serde")]
+struct NumVisitor<const TS: u8, const PID: u8, const SEQ: u8> {}
+
+#[cfg(feature = "serde")]
+impl<'de, const TS: u8, const PID: u8, const SEQ: u8> de::Visitor<'de> for NumVisitor<TS, PID, SEQ> {
+    type Value = Snowflake<TS, PID, SEQ>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "a number from 0 to 9,223,372,036,854,775,807")
+    }
+
+    fn visit_i64<E>(self, i: i64) -> Result<Self::Value, E>
+    where
+        E: de::Error
+    {
+        let Ok(flake) = Snowflake::try_from(i) else {
+            return Err(E::invalid_value(de::Unexpected::Signed(i), &self));
+        };
+
+        Ok(flake)
+    }
+
+    fn visit_u64<E>(self, u: u64) -> Result<Self::Value, E>
+    where
+        E: de::Error
+    {
+        let Ok(flake) = Snowflake::try_from(u as i64) else {
+            return Err(E::invalid_value(de::Unexpected::Unsigned(u), &self));
+        };
+
+        Ok(flake)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de, const TS: u8, const PID: u8, const SEQ: u8> de::Deserialize<'de> for Snowflake<TS, PID, SEQ> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        deserializer.deserialize_i64(NumVisitor {})
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -250,5 +341,56 @@ mod test {
             flake.id(),
             flake
         );
+    }
+
+    #[cfg(feature = "serde")]
+    mod serde_ext {
+        use super::*;
+
+        use serde::{Serialize, Deserialize};
+        use serde_json;
+
+        #[derive(Serialize, Deserialize)]
+        struct IdFlake {
+            id: TestSnowflake,
+        }
+
+        #[test]
+        fn to_int() {
+            let obj = IdFlake {
+                id: TestSnowflake::from_parts(1, 1, 1).unwrap(),
+            };
+
+            match serde_json::to_string(&obj) {
+                Ok(json_string) => {
+                    assert_eq!(
+                        json_string,
+                        String::from("{\"id\":1052673}"),
+                        "invalid json string"
+                    );
+                },
+                Err(err) => {
+                    panic!("failed to create json string. {:#?}", err);
+                }
+            }
+        }
+
+        #[test]
+        fn from_int() {
+            let json_str = "{\"id\":1052673}";
+
+            match serde_json::from_str::<IdFlake>(json_str) {
+                Ok(obj) => {
+                    assert_eq!(
+                        obj.id,
+                        TestSnowflake::from_parts(1, 1, 1).unwrap(),
+                        "invalid parsed id"
+                    );
+                },
+                Err(err) => {
+                    panic!("failed to parse json string. {:#?}", err);
+                }
+            }
+        }
     }
 }
