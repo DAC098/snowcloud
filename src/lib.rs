@@ -54,11 +54,12 @@
 //!   allows for mutating the object
 //! - [`NextAvailId`](crate::traits::NextAvailId) describes an object that is
 //!   capable of returing a [`duraiton`](std::time::Duration) to the next 
-//!   available millisecond.
-//!
-//! current use case would be for allowing different types of waiting for the
-//! next available id. see [`blocking_next_id`](crate::wait::blocking_next_id)
-//! for example implementation.
+//!   available millisecond. check 
+//!   [`blocking_next_id`](crate::wait::blocking_next_id) for example 
+//!   implementation.
+//! - [`Id`](crate::traits::Id) describes base methods for what an Id requires.
+//!   currently just handles turning a snowflake into its base type like an
+//!   `i64`.
 //!
 //! ## Snowflake Bits
 //!
@@ -137,6 +138,9 @@
 
 pub mod traits;
 mod error;
+
+#[cfg(feature = "serde")]
+pub mod serde_ext;
 
 mod flake;
 mod cloud;

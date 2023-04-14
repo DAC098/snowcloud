@@ -7,9 +7,7 @@ use std::fmt;
 use serde::{de, ser};
 
 use crate::error;
-
-#[cfg(feature = "serde")]
-pub mod serde_ext;
+use crate::traits;
 
 /// id generated from a Snowcloud
 ///
@@ -49,7 +47,6 @@ pub mod serde_ext;
 ///
 /// ```rust
 /// use serde::{Serialize, Deserialize};
-/// use snowcloud::serde_ext;
 ///
 /// type MyFlake = snowcloud::Snowflake<43, 8, 12>;
 ///
@@ -67,7 +64,7 @@ pub mod serde_ext;
 /// println!("{}", json_string);
 /// ```
 ///
-/// if you want more options check out [`serde_ext`](crate::serde_ext)
+/// if you want more options check out [`serde`](crate::serde_ext)
 #[derive(Eq, Clone)]
 pub struct Snowflake<const TS: u8, const PID: u8, const SEQ: u8> {
     pub(crate) ts: Duration,
@@ -150,6 +147,63 @@ impl<const TS: u8, const PID: u8, const SEQ: u8> Snowflake<TS, PID, SEQ> {
     pub fn id(&self) -> i64 {
         (self.tsm << Self::TIMESTAMP_SHIFT) | (self.pid << Self::PRIMARY_ID_SHIFT) | self.seq
     }
+
+    /// attempts to generated a snowflake from the given i64
+    fn try_from(id: &i64) -> error::Result<Self> {
+        if *id < 0 {
+            return Err(error::Error::InvalidId);
+        }
+
+        let millis = ((*id & Self::TIMESTAMP_MASK) >> Self::TIMESTAMP_SHIFT) as u64;
+
+        Ok(Snowflake {
+            ts: Duration::from_millis(millis),
+            tsm: (id & Self::TIMESTAMP_MASK) >> Self::TIMESTAMP_SHIFT,
+            pid: (id & Self::PRIMARY_ID_MASK) >> Self::PRIMARY_ID_SHIFT,
+            seq: id & Self::SEQUENCE_MASK,
+        })
+    }
+
+}
+
+impl<const TS: u8, const PID: u8, const SEQ: u8> traits::Id for Snowflake<TS, PID, SEQ> {
+    type BaseType = i64;
+
+    fn id(&self) -> Self::BaseType {
+        Snowflake::id(self)
+    }
+}
+
+impl<const TS: u8, const PID: u8, const SEQ: u8> From<Snowflake<TS, PID, SEQ>> for i64 {
+    #[inline(always)]
+    fn from(flake: Snowflake<TS, PID, SEQ>) -> i64 {
+        flake.id()
+    }
+}
+
+impl<const TS: u8, const PID: u8, const SEQ: u8> From<&Snowflake<TS, PID, SEQ>> for i64 {
+    #[inline(always)]
+    fn from(flake: &Snowflake<TS, PID, SEQ>) -> i64 {
+        flake.id()
+    }
+}
+
+impl<const TS: u8, const PID: u8, const SEQ: u8> TryFrom<i64> for Snowflake<TS, PID, SEQ> {
+    type Error = error::Error;
+
+    #[inline(always)]
+    fn try_from(id: i64) -> Result<Self, Self::Error> {
+        Snowflake::try_from(&id)
+    }
+}
+
+impl<const TS: u8, const PID: u8, const SEQ: u8> TryFrom<&i64> for Snowflake<TS, PID, SEQ> {
+    type Error = error::Error;
+
+    #[inline(always)]
+    fn try_from(id: &i64) -> Result<Self, Self::Error> {
+        Snowflake::try_from(id)
+    }
 }
 
 impl<const TS: u8, const PID: u8, const SEQ: u8> std::cmp::PartialEq for Snowflake<TS, PID, SEQ> {
@@ -180,56 +234,6 @@ impl<const TS: u8, const PID: u8, const SEQ: u8> std::fmt::Debug for Snowflake<T
     }
 }
 
-impl<const TS: u8, const PID: u8, const SEQ: u8> From<Snowflake<TS, PID, SEQ>> for i64 {
-    fn from(flake: Snowflake<TS, PID, SEQ>) -> i64 {
-        flake.id()
-    }
-}
-
-impl<const TS: u8, const PID: u8, const SEQ: u8> From<&Snowflake<TS, PID, SEQ>> for i64 {
-    fn from(flake: &Snowflake<TS, PID, SEQ>) -> i64 {
-        flake.id()
-    }
-}
-
-impl<const TS: u8, const PID: u8, const SEQ: u8> TryFrom<i64> for Snowflake<TS, PID, SEQ> {
-    type Error = error::Error;
-
-    fn try_from(id: i64) -> error::Result<Self> {
-        if id < 0 {
-            return Err(error::Error::InvalidId);
-        }
-
-        let millis = ((id & Self::TIMESTAMP_MASK) >> Self::TIMESTAMP_SHIFT) as u64;
-
-        Ok(Snowflake {
-            ts: Duration::from_millis(millis),
-            tsm: (id & Self::TIMESTAMP_MASK) >> Self::TIMESTAMP_SHIFT,
-            pid: (id & Self::PRIMARY_ID_MASK) >> Self::PRIMARY_ID_SHIFT,
-            seq: id & Self::SEQUENCE_MASK
-        })
-    }
-}
-
-impl<const TS: u8, const PID: u8, const SEQ: u8> TryFrom<&i64> for Snowflake<TS, PID, SEQ> {
-    type Error = error::Error;
-
-    fn try_from(id: &i64) -> error::Result<Self> {
-        if *id < 0 {
-            return Err(error::Error::InvalidId);
-        }
-
-        let millis = ((*id & Self::TIMESTAMP_MASK) >> Self::TIMESTAMP_SHIFT) as u64;
-
-        Ok(Snowflake {
-            ts: Duration::from_millis(millis),
-            tsm: (id & Self::TIMESTAMP_MASK) >> Self::TIMESTAMP_SHIFT,
-            pid: (id & Self::PRIMARY_ID_MASK) >> Self::PRIMARY_ID_SHIFT,
-            seq: id & Self::SEQUENCE_MASK,
-        })
-    }
-}
-
 #[cfg(feature = "serde")]
 impl<const TS: u8, const PID: u8, const SEQ: u8> ser::Serialize for Snowflake<TS, PID, SEQ> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -257,7 +261,7 @@ impl<'de, const TS: u8, const PID: u8, const SEQ: u8> de::Visitor<'de> for NumVi
     where
         E: de::Error
     {
-        let Ok(flake) = Snowflake::try_from(i) else {
+        let Ok(flake) = Snowflake::try_from(&i) else {
             return Err(E::invalid_value(de::Unexpected::Signed(i), &self));
         };
 
@@ -268,7 +272,7 @@ impl<'de, const TS: u8, const PID: u8, const SEQ: u8> de::Visitor<'de> for NumVi
     where
         E: de::Error
     {
-        let Ok(flake) = Snowflake::try_from(u as i64) else {
+        let Ok(flake) = Snowflake::try_from(&(u as i64)) else {
             return Err(E::invalid_value(de::Unexpected::Unsigned(u), &self));
         };
 

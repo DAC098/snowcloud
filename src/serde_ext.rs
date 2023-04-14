@@ -5,13 +5,13 @@
 //!
 //! ```rust
 //! use serde::{Serialize, Deserialize};
-//! use snowcloud::serde_ext;
+//! use snowcloud::serde_ext::i64_string_id;
 //!
 //! type MyFlake = snowcloud::Snowflake<43, 8, 12>;
 //!
 //! #[derive(Serialize, Deserialize)]
 //! pub struct MyStruct {
-//!     #[serde(with = "serde_ext::i64_string_id")]
+//!     #[serde(with = "i64_string_id")]
 //!     id: MyFlake,
 //! }
 //!
@@ -24,32 +24,49 @@
 //! println!("{}", json_string);
 //! ```
 
+use std::string::ToString;
+
+use serde::ser;
+
+use crate::traits;
+
+/// serializes a given snowflake to a string
+pub fn serialize<F, S>(flake: &F, serializer: S) -> Result<S::Ok, S::Error>
+where
+    F: traits::Id,
+    F::BaseType: ToString,
+    S: ser::Serializer
+{
+    let id_str = flake.id().to_string();
+
+    serializer.serialize_str(id_str.as_str())
+}
+
 /// de/serializes a snowflake to a string
 ///
 /// structured to be used in `#[serde(with = "i64_string_id")]`. will assume
 /// base 10 number strings
 pub mod i64_string_id {
     use std::fmt;
+    use std::marker::PhantomData;
+    use core::convert::TryFrom;
 
-    use serde::{de, ser};
+    use serde::de;
 
-    use crate::Snowflake;
+    use crate::traits;
 
-    /// serializes a given snowflake to a string
-    pub fn serialize<const TS: u8, const PID: u8, const SEQ: u8, S>(flake: &Snowflake<TS, PID, SEQ>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: ser::Serializer
-    {
-        let id_str = flake.id().to_string();
-
-        serializer.serialize_str(id_str.as_str())
-    }
+    pub use super::serialize;
 
     /// visitor for deserializing a string to a snowflake
-    struct StringVisitor<const TS: u8, const PID: u8, const SEQ: u8> {}
+    struct StringVisitor<F> {
+        phantom: PhantomData<F>
+    }
 
-    impl<'de, const TS: u8, const PID: u8, const SEQ: u8> de::Visitor<'de> for StringVisitor<TS, PID, SEQ> {
-        type Value = Snowflake<TS, PID, SEQ>;
+    impl<'de, F> de::Visitor<'de> for StringVisitor<F>
+    where
+        F: traits::Id + TryFrom<i64> + Sized
+    {
+        type Value = F;
 
         fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
             write!(formatter, "a number string from 0 to 9,223,372,036,854,775,807")
@@ -63,7 +80,7 @@ pub mod i64_string_id {
                 return Err(E::invalid_value(de::Unexpected::Str(s), &self));
             };
 
-            let Ok(flake) = Snowflake::try_from(int) else {
+            let Ok(flake) = TryFrom::try_from(int) else {
                 return Err(E::invalid_value(de::Unexpected::Str(s), &self));
             };
 
@@ -72,11 +89,14 @@ pub mod i64_string_id {
     }
 
     /// deserializes a given string to a snowflake
-    pub fn deserialize<'de, const TS: u8, const PID: u8, const SEQ: u8, D>(deserializer: D) -> Result<Snowflake<TS, PID, SEQ>, D::Error>
+    pub fn deserialize<'de, F, D>(deserializer: D) -> Result<F, D::Error>
     where
+        F: traits::Id + TryFrom<i64> + Sized,
         D: de::Deserializer<'de>
     {
-        deserializer.deserialize_str(StringVisitor {})
+        deserializer.deserialize_str(StringVisitor {
+            phantom: PhantomData
+        })
     }
 
     #[cfg(test)]
@@ -84,7 +104,7 @@ pub mod i64_string_id {
         use serde::{Serialize, Deserialize};
         use serde_json;
 
-        use crate::flake::serde_ext::i64_string_id;
+        use crate::serde_ext::i64_string_id;
         use crate::flake::Snowflake;
 
         type MyFlake = Snowflake<43, 8, 12>;
@@ -132,6 +152,5 @@ pub mod i64_string_id {
                 }
             }
         }
-
     }
 }

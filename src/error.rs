@@ -69,6 +69,9 @@ pub enum Error {
 
     /// the provided i64 is not a valid Snowflake
     InvalidId,
+
+    /// provided too many segments for creating a Snowflake
+    TooManySegments
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -100,6 +103,9 @@ impl std::fmt::Display for Error {
             Error::InvalidId => write!(
                 f, "invalid id"
             ),
+            Error::TooManySegments => write!(
+                f, "too many segments"
+            )
         }
     }
 }

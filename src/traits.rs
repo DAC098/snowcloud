@@ -48,6 +48,15 @@ pub trait NextAvailId {
     fn next_avail_id(&self) -> Option<&std::time::Duration>;
 }
 
+/// basic Snowflake structure
+pub trait Id {
+    /// what the id can be turned to and from
+    type BaseType;
+
+    /// creates the a value of BaseType from the id
+    fn id(&self) -> Self::BaseType;
+}
+
 // when generic_const_exprs is stable this will be used to check that the
 // provided bit values equal to 63
 /*

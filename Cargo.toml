@@ -1,6 +1,6 @@
 [package]
 name = "snowcloud"
-version = "0.2.0"
+version = "0.3.0"
 rust-version = "1.65.0"
 edition = "2021"
 description = "small crate for creating custom snowflakes that provides thread safe and non thread safe generators"
