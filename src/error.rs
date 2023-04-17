@@ -13,12 +13,12 @@ use crate::traits;
 ///
 /// ```rust
 /// use snowcloud::Error::SequenceMaxReached;
-/// type MyCloud = snowcloud::SingleThread<43, 8, 12>;
+/// type MyFlake = snowcloud::i64::SingleIdFlake<43, 8, 12>;
+/// type MyCloud = snowcloud::SingleThread<MyFlake>;
 ///
 /// const START_TIME: u64 = 1679587200000;
-/// const PRIMARY_ID: i64 = 1;
 ///
-/// let mut cloud = MyCloud::new(PRIMARY_ID, START_TIME)
+/// let mut cloud = MyCloud::new(START_TIME, 1)
 ///     .expect("failed to create MyCloud");
 ///
 /// match cloud.next_id() {
@@ -40,16 +40,14 @@ use crate::traits;
 #[derive(Debug)]
 pub enum Error {
 
-    /// a provided primary id is less than 0 or greater than the max value
-    /// specified by a Snowcloud
-    PrimaryIdInvalid,
+    /// a provided id seg is invalid.
+    IdSegInvalid,
 
-    /// a provided epoch is less than 0 or greater than the max value
-    /// specified by a Snowcloud
+    /// a provided epoch is invalid
     EpochInvalid,
 
     /// a provided sequence is less than 0 or greater than the max value
-    /// specified by a Snowcloud
+    /// specified by a Snowflake
     SequenceInvalid,
 
     /// the max possible timestamp value has been reached when generating a
@@ -79,8 +77,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::PrimaryIdInvalid => write!(
-                f, "primary id invalid"
+            Error::IdSegInvalid => write!(
+                f, "id seg invalid"
             ),
             Error::EpochInvalid => write!(
                 f, "epoch invalid"

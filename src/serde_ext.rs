@@ -7,7 +7,7 @@
 //! use serde::{Serialize, Deserialize};
 //! use snowcloud::serde_ext::i64_string_id;
 //!
-//! type MyFlake = snowcloud::Snowflake<43, 8, 12>;
+//! type MyFlake = snowcloud::i64::SingleIdFlake<43, 8, 12>;
 //!
 //! #[derive(Serialize, Deserialize)]
 //! pub struct MyStruct {
@@ -105,9 +105,10 @@ pub mod i64_string_id {
         use serde_json;
 
         use crate::serde_ext::i64_string_id;
-        use crate::flake::Snowflake;
+        use crate::flake::i64::{SingleIdFlake, DualIdFlake};
 
-        type MyFlake = Snowflake<43, 8, 12>;
+        type MyFlake = SingleIdFlake<43, 8, 12>;
+        type MyFlake2 = DualIdFlake<43, 4, 4, 12>;
 
         #[derive(Serialize, Deserialize)]
         struct StringFlake {
@@ -115,8 +116,14 @@ pub mod i64_string_id {
             id: MyFlake,
         }
 
+        #[derive(Serialize, Deserialize)]
+        struct StringFlake2 {
+            #[serde(with = "i64_string_id")]
+            id: MyFlake2
+        }
+
         #[test]
-        fn to_string() {
+        fn to_string_single_id_seg() {
             let obj = StringFlake {
                 id: MyFlake::from_parts(1, 1, 1).unwrap()
             };
@@ -136,7 +143,7 @@ pub mod i64_string_id {
         }
 
         #[test]
-        fn from_string() {
+        fn from_string_single_id_seg() {
             let json_str = "{\"id\":\"1052673\"}";
 
             match serde_json::from_str::<StringFlake>(json_str) {
@@ -144,6 +151,44 @@ pub mod i64_string_id {
                     assert_eq!(
                         obj.id,
                         MyFlake::from_parts(1, 1, 1).unwrap(),
+                        "invalid parsed id"
+                    );
+                },
+                Err(err) => {
+                    panic!("failed to parse json string. {:#?}", err);
+                }
+            }
+        }
+
+        #[test]
+        fn to_string_dual_id_seg() {
+            let obj = StringFlake2 {
+                id: MyFlake2::from_parts(1, 1, 1, 1).unwrap()
+            };
+
+            match serde_json::to_string(&obj) {
+                Ok(json_string) => {
+                    assert_eq!(
+                        json_string,
+                        String::from("{\"id\":\"1118209\"}"),
+                        "invalid json string"
+                    );
+                },
+                Err(err) => {
+                    panic!("failed to create json string. {:#?}", err);
+                }
+            }
+        }
+
+        #[test]
+        fn from_string_dual_id_seg() {
+            let json_str = "{\"id\":\"1118209\"}";
+
+            match serde_json::from_str::<StringFlake2>(json_str) {
+                Ok(obj) => {
+                    assert_eq!(
+                        obj.id,
+                        MyFlake2::from_parts(1, 1, 1, 1).unwrap(),
                         "invalid parsed id"
                     );
                 },
