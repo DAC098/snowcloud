@@ -7,7 +7,7 @@ a small library for implementing custom ids based on timestamps, static ids, and
 ```rust
 // 43 bit timestamp, 8 bit primary id, 12 bit sequence
 type MyFlake = snowcloud::i64::SingleIdFlake<43, 8, 12>;
-type MyCloud = snowcloud::SingleThread<MyFlake>;
+type MyCloud = snowcloud::Generator<MyFlake>;
 
 // 2023/03/23 9:00:00 in milliseconds, timestamps will start from this
 // date
