@@ -9,7 +9,7 @@ use serde::{de, ser};
 
 use crate::error;
 use crate::traits;
-use crate::flake::segments::DualSeg;
+use crate::flake::Segments;
 
 /// u64 Snowflake with 2 id segments
 ///
@@ -89,7 +89,7 @@ use crate::flake::segments::DualSeg;
 ///
 /// ```rust
 /// type MyFlake = snowcloud::u64::DualIdFlake<43, 4, 4, 12>;
-/// type MyCloud = snowcloud::SingleThread<MyFlake>;
+/// type MyCloud = snowcloud::Generator<MyFlake>;
 ///
 /// const START_TIME: u64 = 1679587200000;
 ///
@@ -310,7 +310,7 @@ impl<const TS: u8, const PID: u8, const SID: u8, const SEQ: u8> std::fmt::Debug 
 }
 
 impl<const TS: u8, const PID: u8, const SID: u8, const SEQ: u8> traits::FromIdGenerator for DualIdFlake<TS, PID, SID, SEQ> {
-    type IdSegType = DualSeg<u64>;
+    type IdSegType = Segments<u64, 2>;
 
     fn valid_id(v: &Self::IdSegType) -> bool {
         *v.primary() > 0 && *v.primary() <= Self::MAX_PRIMARY_ID && 

@@ -11,7 +11,7 @@
 //! ```rust
 //! // 43 bit timestamp, 8 bit primary id, 12 bit sequence
 //! type MyFlake = snowcloud::i64::SingleIdFlake<43, 8, 12>;
-//! type MyCloud = snowcloud::SingleThread<MyFlake>;
+//! type MyCloud = snowcloud::Generator<MyFlake>;
 //!
 //! // 2023/03/23 9:00:00 in milliseconds, timestamps will start from this
 //! // date
@@ -30,7 +30,7 @@
 //! ```rust
 //! // 43 bit timestamp, 4 bit primary id, 4 bit secondary id, 12 bit sequence
 //! type MyFlake = snowcloud::i64::DualIdFlake<43, 4, 4, 12>;
-//! type MyCloud = snowcloud::SingleThread<MyFlake>;
+//! type MyCloud = snowcloud::Generator<MyFlake>;
 //!
 //! // 2023/03/23 9:00:00 in milliseconds, timestamps will start from this
 //! // date
@@ -46,18 +46,18 @@
 //!
 //! ## Behavior
 //!
-//! [`MultiThread`] is a thread safe implementation for sharing between threads
-//! on a system. it uses an [`Arc`](std::sync::Arc) [`Mutex`](std::sync::Mutex)
-//! to handle sharing the sequence count and prev_time. the only time it will
-//! block is when acquiring the mutex and will not wait if a valid snowflake
-//! cannot be acquired. if a generator is unable to create a snowflake because
-//! the max sequence number has been reached an error will be returned
-//! providing an estimated duration to the next millisecond. how you want to
-//! wait can be decided by the user.
+//! [`sync::MutexGenerator`] is a thread safe implementation for sharing
+//! between threads on a system. it uses an [`Arc`](std::sync::Arc)
+//! [`Mutex`](std::sync::Mutex) to handle sharing the sequence count and
+//! prev_time. the only time it will block is when acquiring the mutex and will
+//! not wait if a valid snowflake cannot be acquired. if a generator is unable
+//! to create a snowflake because the max sequence number has been reached an
+//! error will be returned providing an estimated duration to the next 
+//! millisecond. how you want to wait can be decided by the user.
 //!
-//! [`SingleThread`] is similar in most aspects to MultiThread expect next_id
-//! is a mutating call and sequence count with prev_time are not stored in an
-//! Arc Mutext. THIS IS NOT THREAD SAFE.
+//! [`Generator`] is similar in most aspects to `sync::MutexGenerator` expect 
+//! next_id is a mutating call and sequence count with prev_time are not stored
+//! in an Arc Mutext. THIS IS NOT THREAD SAFE.
 //!
 //! ## Traits
 //!

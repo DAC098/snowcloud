@@ -1,6 +1,8 @@
 //! various kins of snowflakes available
 
-pub mod segments;
+mod segments;
+
+pub use segments::Segments;
 
 pub mod i64;
 pub mod u64;

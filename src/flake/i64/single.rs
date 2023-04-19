@@ -80,7 +80,7 @@ use crate::traits;
 ///
 /// ```rust
 /// type MyFlake = snowcloud::i64::SingleIdFlake<43, 8, 12>;
-/// type MyCloud = snowcloud::SingleThread<MyFlake>;
+/// type MyCloud = snowcloud::Generator<MyFlake>;
 ///
 /// const START_TIME: u64 = 1679587200000;
 ///

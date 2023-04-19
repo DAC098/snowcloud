@@ -8,7 +8,8 @@ use std::time::Duration;
 /// basics of an id generator
 ///
 /// describes what is needed to be considered an IdGenerator.
-/// [`MultiThread`](crate::MultiThread) implements this trait as an example
+/// [`sync::MutexGenerator`](crate::sync::MutexGenerator) implements this
+/// trait as an example
 pub trait IdGenerator {
     /// the potential error that could be returned from next_id
     type Error;
@@ -29,7 +30,7 @@ pub trait IdGenerator {
 /// mutating
 ///
 /// describes what is needed to be considered an IdGeneratorMut.
-/// [`SingleThread`](crate::SingleThread) implements this trait as an example
+/// [`Generator`](crate::Generator) implements this trait as an example
 pub trait IdGeneratorMut {
     /// the potential error that could be returned from next_id
     type Error;

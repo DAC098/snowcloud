@@ -5,9 +5,14 @@ use crate::traits;
 use crate::error;
 use crate::cloud::common::Counts;
 
-/// thread safe snowcloud
+/// thread safe snowflake generator
 ///
-/// guards the previous time and sequence count behind an
+/// generates a given snowflake with the provided epoch and id value. epoch is
+/// a specified date that can be in the future of
+/// [`UNIX_EPOCH`](std::time::SystemTime::UNIX_EPOCH) but not in the future of
+/// now. the sequence value will always start at 1 when created.
+///
+/// this guards the previous time and sequence count behind an
 /// [`Arc`](std::sync::Arc) [`Mutex`](std::sync::Mutex). the critical section
 /// is small and will not block if its unable to get a valid snowflake.
 ///
@@ -18,7 +23,7 @@ use crate::cloud::common::Counts;
 ///
 /// ```rust
 /// type MyFlake = snowcloud::i64::SingleIdFlake<43, 8, 12>;
-/// type MyCloud = snowcloud::MultiThread<MyFlake>;
+/// type MyCloud = snowcloud::sync::MutexGenerator<MyFlake>;
 ///
 /// const START_TIME: u64 = 1679587200000;
 ///
@@ -30,7 +35,7 @@ use crate::cloud::common::Counts;
 ///
 /// println!("{:?}", cloud.next_id());
 /// ```
-pub struct MultiThread<F>
+pub struct MutexGenerator<F>
 where
     F: traits::FromIdGenerator
 {
@@ -39,13 +44,13 @@ where
     counts: Arc<Mutex<Counts>>,
 }
 
-impl<F> Clone for MultiThread<F>
+impl<F> Clone for MutexGenerator<F>
 where
     F: traits::FromIdGenerator,
     F::IdSegType: Clone
 {
     fn clone(&self) -> Self {
-        MultiThread {
+        MutexGenerator {
             ep: self.ep,
             ids: self.ids.clone(),
             counts: Arc::clone(&self.counts),
@@ -53,11 +58,11 @@ where
     }
 }
 
-impl<F> MultiThread<F>
+impl<F> MutexGenerator<F>
 where
     F: traits::FromIdGenerator
 {
-    /// returns a new MultiThread generator
+    /// returns a new MutexGenerator
     ///
     /// will return an error if ids is invalid, the timestamp is invalid, it 
     /// fails to retrieve the current timestamp, or if the epoch is ahead of 
@@ -76,13 +81,12 @@ where
             return Err(error::Error::EpochInvalid);
         }
 
-        let Some(sys_time) = SystemTime::UNIX_EPOCH.clone()
-            .checked_add(Duration::from_millis(epoch)) else {
+        let Some(sys_time) = SystemTime::UNIX_EPOCH.checked_add(Duration::from_millis(epoch)) else {
             return Err(error::Error::TimestampError);
         };
         let prev_time = sys_time.elapsed()?;
 
-        Ok(MultiThread {
+        Ok(MutexGenerator {
             ep: sys_time,
             ids,
             counts: Arc::new(Mutex::new(Counts {
@@ -165,7 +169,7 @@ where
     }
 }
 
-impl<F> traits::IdGenerator for MultiThread<F>
+impl<F> traits::IdGenerator for MutexGenerator<F>
 where
     F: traits::FromIdGenerator
 {
@@ -174,7 +178,7 @@ where
     type Output = std::result::Result<Self::Id, Self::Error>;
 
     fn next_id(&self) -> Self::Output {
-        MultiThread::next_id(self)
+        MutexGenerator::next_id(self)
     }
 }
 
@@ -193,7 +197,7 @@ mod test {
     const MACHINE_ID: i64 = 1;
 
     type TestSnowflake = SingleIdFlake<43, 8, 12>;
-    type TestSnowcloud = MultiThread<TestSnowflake>;
+    type TestSnowcloud = MutexGenerator<TestSnowflake>;
 
     #[test]
     fn unique_ids() {
@@ -234,7 +238,7 @@ mod test {
             .create(true)
             .write(true)
             .truncate(true)
-            .open("MultiThread_unique_id.debug.txt")
+            .open("MutexGenerator_unique_id.debug.txt")
             .expect("failed to create debug_file");
 
         debug_output.write_fmt(format_args!("total found: {} / {}\n", total_found, generated.len())).unwrap();
@@ -292,7 +296,7 @@ mod test {
             )).unwrap();
         }
 
-        panic!("encountered duplidate ids. check MultiThread_unique_id.debug.txt for details"); 
+        panic!("encountered duplidate ids. check MutexGenerator_unique_id.debug.txt for details"); 
     }
 
     #[test]
@@ -385,21 +389,21 @@ mod test {
             .create(true)
             .write(true)
             .truncate(true)
-            .open("MultiThread_unique_id_threaded.debug.txt")
+            .open("MutexGenerator_unique_id_threaded.debug.txt")
             .expect("failed to create debug_file");
 
         let mut joined_lists = std::fs::OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
-            .open("MultiThread_unique_id_threaded_all.debug.txt")
+            .open("MutexGenerator_unique_id_threaded_all.debug.txt")
             .expect("faled to create debug_file");
 
         let mut timing_groups = std::fs::OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
-            .open("MultiThread_unique_id_threaded_time.debug.txt")
+            .open("MutexGenerator_unique_id_threaded_time.debug.txt")
             .expect("failed to create debug_file");
 
         let max_seq_width = (TestSnowflake::MAX_SEQUENCE.checked_ilog10().unwrap_or(0) + 1) as usize;
@@ -575,6 +579,6 @@ mod test {
             }
         }
 
-        panic!("encountered duplidate ids. check MultiThread_unique_id_threaded for output");
+        panic!("encountered duplidate ids. check MutexGenerator_unique_id_threaded for output");
     }
 }

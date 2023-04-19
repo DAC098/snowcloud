@@ -37,7 +37,7 @@ fn block_duration(dur: &Duration) {
 ///
 /// ```rust
 /// type MyFlake = snowcloud::i64::SingleIdFlake<43, 8, 12>;
-/// type MyCloud = snowcloud::MultiThread<MyFlake>;
+/// type MyCloud = snowcloud::sync::MutexGenerator<MyFlake>;
 ///
 /// const START_TIME: u64 = 1679587200000;
 ///
@@ -90,7 +90,7 @@ where
 /// ```rust
 /// use snowcloud::Error;
 /// type MyFlake = snowcloud::i64::SingleIdFlake<43, 8, 12>;
-/// type MyCloud = snowcloud::SingleThread<MyFlake>;
+/// type MyCloud = snowcloud::Generator<MyFlake>;
 ///
 /// const START_TIME: u64 = 1679587200000;
 ///
