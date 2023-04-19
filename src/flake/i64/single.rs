@@ -8,6 +8,7 @@ use serde::{de, ser};
 
 use crate::error;
 use crate::traits;
+use crate::Segments;
 
 /// i64 Snowflake with 1 id segment
 ///
@@ -172,7 +173,7 @@ impl<const TS: u8, const PID: u8, const SEQ: u8> SingleIdFlake<TS, PID, SEQ> {
 
         let ts = Duration::from_millis(tsm as u64);
 
-        Ok(SingleIdFlake { ts, tsm, pid, seq })
+        Ok(Self { ts, tsm, pid, seq })
     }
 
     /// splits the current Snowflake into its individual parts
@@ -186,14 +187,17 @@ impl<const TS: u8, const PID: u8, const SEQ: u8> SingleIdFlake<TS, PID, SEQ> {
     }
 
     /// attempts to generated a snowflake from the given i64
-    fn try_from(id: &i64) -> error::Result<Self> {
+    ///
+    /// integer must be greater than or equal to `0` and less than or equal to
+    /// [`i64::MAX`](i64::MAX)
+    pub fn try_from(id: &i64) -> error::Result<Self> {
         if *id < 0 {
             return Err(error::Error::InvalidId);
         }
 
         let millis = ((*id & Self::TIMESTAMP_MASK) >> Self::TIMESTAMP_SHIFT) as u64;
 
-        Ok(SingleIdFlake {
+        Ok(Self {
             ts: Duration::from_millis(millis),
             tsm: (id & Self::TIMESTAMP_MASK) >> Self::TIMESTAMP_SHIFT,
             pid: (id & Self::PRIMARY_ID_MASK) >> Self::PRIMARY_ID_SHIFT,
@@ -275,10 +279,10 @@ impl<const TS: u8, const PID: u8, const SEQ: u8> std::fmt::Debug for SingleIdFla
 // if something happens in between checks unless create checks again to make
 // sure that the values are correct
 impl<const TS: u8, const PID: u8, const SEQ: u8> traits::FromIdGenerator for SingleIdFlake<TS, PID, SEQ> {
-    type IdSegType = i64;
+    type IdSegType = Segments<i64, 1>;
 
-    fn valid_id(v: &i64) -> bool {
-        *v > 0 && *v <= Self::MAX_PRIMARY_ID
+    fn valid_id(v: &Self::IdSegType) -> bool {
+        *v.primary() > 0 && *v.primary() <= Self::MAX_PRIMARY_ID
     }
 
     fn valid_epoch(e: &u64) -> bool {
@@ -301,13 +305,13 @@ impl<const TS: u8, const PID: u8, const SEQ: u8> traits::FromIdGenerator for Sin
         Duration::from_nanos((1_000_000 - (ts.subsec_nanos() % 1_000_000)) as u64)
     }
 
-    fn create(ts: Duration, seq: u64, ids: &i64) -> Self {
+    fn create(ts: Duration, seq: u64, ids: &Self::IdSegType) -> Self {
         let tsm = ts.as_millis() as i64;
 
         Self {
             ts,
             tsm,
-            pid: *ids,
+            pid: *ids.primary(),
             seq: seq as i64
         }
     }
@@ -333,7 +337,7 @@ impl<'de, const TS: u8, const PID: u8, const SEQ: u8> de::Visitor<'de> for NumVi
     type Value = SingleIdFlake<TS, PID, SEQ>;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "a number from 0 to 9,223,372,036,854,775,807")
+        write!(formatter, "integer from 0 to i64::MAX")
     }
 
     fn visit_i64<E>(self, i: i64) -> Result<Self::Value, E>

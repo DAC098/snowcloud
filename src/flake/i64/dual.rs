@@ -225,7 +225,10 @@ impl<const TS: u8, const PID: u8, const SID: u8, const SEQ: u8> DualIdFlake<TS, 
     }
 
     /// attempts to generated a snowflake from the given i64
-    fn try_from(id: &i64) -> error::Result<Self> {
+    ///
+    /// integer must be greater than or equal to `0` and less than or euqal to
+    /// [`i64::MAX`](i64::MAX)
+    pub fn try_from(id: &i64) -> error::Result<Self> {
         if *id < 0 {
             return Err(error::Error::InvalidId);
         }
@@ -374,7 +377,7 @@ impl<'de, const TS: u8, const PID: u8, const SID: u8, const SEQ: u8> de::Visitor
     type Value = DualIdFlake<TS, PID, SID, SEQ>;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "a number from 0 to 9,223,372,036,854,775,807")
+        write!(formatter, "integer from 0 to i64::MAX")
     }
 
     fn visit_i64<E>(self, i: i64) -> Result<Self::Value, E>

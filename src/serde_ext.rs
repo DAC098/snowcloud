@@ -85,7 +85,7 @@ pub mod string_id {
         type Value = F;
 
         fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            write!(formatter, "a number string from 0 to 9,223,372,036,854,775,807")
+            write!(formatter, "non empty integer string within the valid range of the Id")
         }
 
         fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
