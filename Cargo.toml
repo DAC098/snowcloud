@@ -12,15 +12,24 @@ keywords = ["snowflake", "serde"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[workspace]
+members = [
+    "snowcloud-core",
+    "snowcloud-flake",
+    "snowcloud-cloud"
+]
+
 [[bench]]
 name = "gen"
 harness = false
 
 [features]
-serde = ["dep:serde"]
+serde = ["snowcloud-flake/serde"]
 
 [dependencies]
-serde = { version = "1", optional = true }
+snowcloud-core = { path = "./snowcloud-core", version = "0.1.0" }
+snowcloud-flake = { path = "./snowcloud-flake", version = "0.1.0" }
+snowcloud-cloud = { path = "./snowcloud-cloud", version = "0.1.0" }
 
 [dev-dependencies]
 criterion = "0.4"

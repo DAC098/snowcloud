@@ -1,0 +1,25 @@
+[package]
+name = "snowcloud-flake"
+version = "0.1.0"
+rust-version = "1.65.0"
+edition = "2021"
+description = "contains snowflake structs for use with snowcloud"
+readme = "README.md"
+homepage = "https://github.com/DAC098/snowcloud"
+repository = "https://github.com/DAC098/snowcloud"
+license = "MIT"
+keywords = ["snowcloud", "snowflake", "serde"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+serde = ["dep:serde"]
+
+[dependencies]
+snowcloud-core = { path = "../snowcloud-core", version = "0.1.0" }
+serde = { version = "1", optional = true }
+
+[dev-dependencies]
+criterion = "0.4"
+serde_derive = { version = "1" }
+serde_json = { version = "1" }

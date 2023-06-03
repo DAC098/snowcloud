@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion, BatchSize};
 
-use snowcloud::{Generator, sync::MutexGenerator};
-use snowcloud::i64::{SingleIdFlake, DualIdFlake};
+use snowcloud::cloud::{Generator, sync::MutexGenerator};
+use snowcloud::flake::i64::{SingleIdFlake, DualIdFlake};
 
 type SID13 = SingleIdFlake<43, 7, 13>;
 type SID12 = SingleIdFlake<43, 8, 12>;

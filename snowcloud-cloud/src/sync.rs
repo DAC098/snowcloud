@@ -1,9 +1,10 @@
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, Duration};
 
-use crate::traits;
+use snowcloud_core::traits::{IdGenerator, FromIdGenerator, IdBuilder};
+
 use crate::error;
-use crate::cloud::common::Counts;
+use crate::common::Counts;
 
 /// thread safe snowflake generator
 ///
@@ -37,7 +38,7 @@ use crate::cloud::common::Counts;
 /// ```
 pub struct MutexGenerator<F>
 where
-    F: traits::FromIdGenerator
+    F: FromIdGenerator
 {
     ep: SystemTime,
     ids: F::IdSegType,
@@ -46,7 +47,7 @@ where
 
 impl<F> Clone for MutexGenerator<F>
 where
-    F: traits::FromIdGenerator,
+    F: FromIdGenerator,
     F::IdSegType: Clone
 {
     fn clone(&self) -> Self {
@@ -60,7 +61,8 @@ where
 
 impl<F> MutexGenerator<F>
 where
-    F: traits::FromIdGenerator
+    F: FromIdGenerator,
+    F::Builder: IdBuilder,
 {
     /// returns a new MutexGenerator
     ///
@@ -113,8 +115,8 @@ where
     /// if the current timestamp reaches max, the max sequence value is
     /// reached, or if it fails to get the current timestamp this will
     /// return an error.
-    pub fn next_id(&self) -> error::Result<F> {
-        let seq: u64;
+    pub fn next_id(&self) -> error::Result<<<F as FromIdGenerator>::Builder as IdBuilder>::Output> {
+        let mut builder = F::builder(&self.ids);
         let ts: Duration;
 
         {
@@ -127,25 +129,31 @@ where
             // have to get the time once the lock is freed to have
             // an accurate timestamp
             ts = self.ep.elapsed()?;
+            let ts_secs = ts.as_secs();
+            let ts_nanos = ts.subsec_nanos();
+            let ts_millis = ts_nanos / 1_000_000;
 
-            if F::max_duration(&ts) {
+            if !builder.with_ts(ts_secs * 1_000 + ts_millis as u64) {
                 return Err(error::Error::TimestampMaxReached);
             }
+
+            let prev_secs = counts.prev_time.as_secs();
+            let prev_millis = counts.prev_time.subsec_nanos() / 1_000_000;
 
             // if we are still on the previously recorded millisecond
             // then we increment the sequence. since the comparison of
             // durations includes nanoseconds we have to do a little
             // more work to only compare what we want
-            if F::current_tick(&ts, &counts.prev_time) {
-                seq = counts.sequence;
-
+            if prev_secs == ts_secs && prev_millis == ts_millis {
                 // before we increment, check to make sure that we
                 // have not reached the maximum sequence value. if
                 // we have then given an estimate to the next
                 // millisecond so that then user can decided on
                 // how to wait for the next available value
-                if F::max_sequence(&seq) {
-                    return Err(error::Error::SequenceMaxReached(F::next_tick(ts)));
+                if !builder.with_seq(counts.sequence) {
+                    return Err(error::Error::SequenceMaxReached(
+                        Duration::from_nanos((1_000_000 - (ts_nanos % 1_000_000)) as u64)
+                    ));
                 }
 
                 // increment to the next sequence number
@@ -153,7 +161,7 @@ where
             } else {
                 // we are not on the previousely recorded millisecond
                 // so the sequence value will be set to one
-                seq = 1;
+                builder.with_seq(1);
 
                 // set the previous time to now and prep for the next
                 // available sequence number
@@ -165,17 +173,20 @@ where
         // unlocked for the next 
         }
 
-        Ok(F::create(ts, seq, &self.ids))
+        builder.with_dur(ts);
+
+        Ok(builder.build())
     }
 }
 
-impl<F> traits::IdGenerator for MutexGenerator<F>
+impl<F> IdGenerator for MutexGenerator<F>
 where
-    F: traits::FromIdGenerator
+    F: FromIdGenerator,
+    F::Builder: IdBuilder
 {
     type Error = error::Error;
-    type Id = F;
-    type Output = std::result::Result<Self::Id, Self::Error>;
+    type Id = <<F as FromIdGenerator>::Builder as IdBuilder>::Output;
+    type Output = Result<Self::Id, Self::Error>;
 
     fn next_id(&self) -> Self::Output {
         MutexGenerator::next_id(self)
@@ -189,9 +200,10 @@ mod test {
     use std::thread;
     use std::io::Write as _;
 
+    use snowcloud_flake::i64::SingleIdFlake;
+
     use super::*;
     use crate::wait::blocking_next_id;
-    use crate::flake::i64::SingleIdFlake;
 
     const START_TIME: u64 = 1679082337000;
     const MACHINE_ID: i64 = 1;
@@ -256,14 +268,16 @@ mod test {
                     )).unwrap();
 
                     for dup in dups {
+                        let dur = dup.1.duration().unwrap();
+
                         debug_output.write_fmt(format_args!(
                             "index: {:index_width$} {} {} {:seq_width$} | {}.{}\n",
                             dup.0,
                             dup.1.timestamp(),
                             dup.1.primary_id(),
                             dup.1.sequence(),
-                            dup.1.duration().as_secs(),
-                            dup.1.duration().subsec_nanos(),
+                            dur.as_secs(),
+                            dur.subsec_nanos(),
                             index_width = index_width,
                             seq_width = seq_width,
                         )).unwrap();
@@ -282,14 +296,16 @@ mod test {
                 is_dup = dups.len() > 1;
             }
 
+            let dur = generated[index].duration().unwrap();
+
             debug_output.write_fmt(format_args!(
                 "{:index_width$} {} {} {:seq_width$} | {}.{} {}\n",
                 index,
                 generated[index].timestamp(),
                 generated[index].primary_id(),
                 generated[index].sequence(),
-                generated[index].duration().as_secs(),
-                generated[index].duration().subsec_nanos(),
+                dur.as_secs(),
+                dur.subsec_nanos(),
                 if is_dup { 'd' } else { ' ' },
                 index_width = index_width,
                 seq_width = seq_width,

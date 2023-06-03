@@ -5,7 +5,7 @@
 
 use std::time::{Instant, Duration};
 
-use crate::traits::{NextAvailId, IdGenerator, IdGeneratorMut};
+use snowcloud_core::traits::{NextAvailId, IdGenerator, IdGeneratorMut};
 
 /// blocks the current thread for the given duration by sleeping, yielding, or
 /// spinning
@@ -139,13 +139,15 @@ where
 mod test {
     use super::*;
 
-    type SIDI64 = crate::i64::SingleIdFlake<43, 16, 4>;
+    use crate::{sync, Generator};
+
+    type SIDI64 = snowcloud_flake::i64::SingleIdFlake<43, 16, 4>;
 
     const START_TIME: u64 = 1679082337000;
 
     #[test]
     fn check_blocking_next_id_mut() {
-        let mut gen = crate::Generator::<SIDI64>::new(START_TIME, 1)
+        let mut gen = Generator::<SIDI64>::new(START_TIME, 1)
             .expect("failed to create generator");
 
         for _ in 0..(SIDI64::MAX_SEQUENCE * 3) {
@@ -159,7 +161,7 @@ mod test {
 
     #[test]
     fn check_blocking_next_id() {
-        let gen = crate::sync::MutexGenerator::<SIDI64>::new(START_TIME, 1)
+        let gen = sync::MutexGenerator::<SIDI64>::new(START_TIME, 1)
             .expect("failed to create generator");
 
         for _ in 0..(SIDI64::MAX_SEQUENCE * 3) {
