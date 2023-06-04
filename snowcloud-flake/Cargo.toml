@@ -14,10 +14,13 @@ keywords = ["snowcloud", "snowflake", "serde"]
 
 [features]
 serde = ["dep:serde"]
+postgres = ["dep:postgres-types", "dep:bytes"]
 
 [dependencies]
 snowcloud-core = { path = "../snowcloud-core", version = "0.1.0" }
 serde = { version = "1", optional = true }
+postgres-types = { version = "0.2.5", optional = true }
+bytes = { version = "1", optional = true }
 
 [dev-dependencies]
 criterion = "0.4"

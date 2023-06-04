@@ -2,6 +2,8 @@ pub mod error;
 
 #[cfg(features = "serde")]
 pub mod serde_ext;
+#[cfg(features = "postgres")]
+mod pg;
 
 mod segments;
 
