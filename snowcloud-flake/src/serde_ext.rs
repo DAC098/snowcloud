@@ -58,7 +58,7 @@ pub mod string_id {
     use serde::{ser, de};
 
     use super::FromStrRadix;
-    use crate::traits;
+    use snowcloud_core::traits;
 
     /// serializes a given snowflake to a string
     pub fn serialize<F, S>(flake: &F, serializer: S) -> Result<S::Ok, S::Error>

@@ -5,7 +5,7 @@ pub fn read_i64(bytes: &[u8]) -> Option<i64> {
         return None;
     }
 
-    bytes.read_exact(&mut array)?;
+    array.copy_from_slice(bytes);
 
     Some(i64::from_be_bytes(array))
 }

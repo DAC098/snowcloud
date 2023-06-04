@@ -8,8 +8,10 @@ use std::fmt;
 #[cfg(feature = "serde")]
 use serde::{de, ser};
 
-#[cfg(features = "postgres")]
+#[cfg(feature = "postgres")]
 use postgres_types::{to_sql_checked, accepts, IsNull, FromSql, ToSql, Type as PgType};
+#[cfg(feature = "postgres")]
+use bytes::{BytesMut, BufMut};
 
 use crate::error;
 use crate::Segments;
@@ -394,7 +396,7 @@ impl<'de, const TS: u8, const PID: u8, const SEQ: u8> de::Deserialize<'de> for S
     }
 }
 
-#[cfg(features = "postgres")]
+#[cfg(feature = "postgres")]
 impl<'a, const TS: u8, const PID: u8, const SEQ: u8> FromSql<'a> for SingleIdFlake<TS, PID, SEQ> {
     fn from_sql(
         _: &PgType, 
@@ -404,20 +406,18 @@ impl<'a, const TS: u8, const PID: u8, const SEQ: u8> FromSql<'a> for SingleIdFla
             return Err("invalid buffer size".into());
         };
 
-        Ok(Self::try_from(&int).map_err(Into::into))
+        Self::try_from(&int).map_err(Into::into)
     }
 
     accepts!(INT8);
-
-    to_sql_checked!();
 }
 
-#[cfg(features = "postgres")]
+#[cfg(feature = "postgres")]
 impl<const TS: u8, const PID: u8, const SEQ: u8> ToSql for SingleIdFlake<TS, PID, SEQ> {
     fn to_sql(
         &self,
         _: &PgType,
-        buf: &mut bytes::BytesMut
+        buf: &mut BytesMut
     ) -> Result<IsNull, Box<dyn std::error::Error + Send + Sync>> {
         let id = self.id();
 
@@ -538,4 +538,5 @@ mod test {
             }
         }
     }
+
 }
