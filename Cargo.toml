@@ -25,6 +25,7 @@ harness = false
 
 [features]
 serde = ["snowcloud-flake/serde"]
+postgres = ["snowcloud-flake/postgres"]
 
 [dependencies]
 snowcloud-core = { path = "./snowcloud-core", version = "0.1.0" }
